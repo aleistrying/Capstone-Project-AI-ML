@@ -23,6 +23,13 @@ search_bases = [
     "https://www.rottentomatoes.com/browse/movies_at_home/affiliates:fandango-at-home",
     "https://www.rottentomatoes.com/browse/movies_at_home/affiliates:netflix",
     "https://www.rottentomatoes.com/browse/movies_at_home/affiliates:apple-tv-plus",
+    "https://www.rottentomatoes.com/browse/movies_at_home/affiliates:prime-video",
+    "https://www.rottentomatoes.com/browse/movies_at_home/sort:popular",
+    "https://www.rottentomatoes.com/browse/movies_at_home/critics:certified_fresh",
+    "https://www.rottentomatoes.com/browse/movies_at_home/",
+    "https://www.rottentomatoes.com/browse/movies_in_theaters/sort:newest",
+    "https://www.rottentomatoes.com/browse/movies_at_home/sort:popular",
+    "https://www.rottentomatoes.com/browse/tv_series_browse/sort:popular",
 ]
 
 headers = {
@@ -70,3 +77,5 @@ for u in all_series_urls:
 
 with open(DATA_DIR / "all_pages.pkl", "wb") as f:
     pickle.dump(all_series_urls, f)
+
+
