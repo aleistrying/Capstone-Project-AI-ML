@@ -47,9 +47,9 @@ The project is being developed as a capstone project for the AML-2403 AI and ML 
 
  # System Architecture
 
-User Input
-NLP Preference Extraction
-Recommendation Engine
-Similarity Ranking
-Explanation Generator
-Chatbot Response
+User Input -->   
+NLP Preference Extraction -->   
+Recommendation Engine  -->
+Similarity Ranking   -->   
+Explanation Generator   -->   
+Chatbot Response   -->   
