@@ -42,19 +42,22 @@ def extract_preferences(user_input):
     }
 
     # Extracción de Géneros
-    for genre in genres_keywords:
-        if genre in user_input:
-            preferences["genres"].append(genre)
+    for genre, keywords in genres_keywords.items():
+        # Verifica si el nombre del género O cualquiera de sus palabras clave están presentes
+        if genre in user_input or any(word in user_input for word in keywords):
+            if genre not in preferences["genres"]:
+                preferences["genres"].append(genre)
 
     # Extracción de Idioma
     for lang_name, lang_code in languages.items():
         if lang_name in user_input:
             preferences["language"] = lang_code
 
-    # Extracción de Mood
-    for mood in moods_keywords:
-        if mood in user_input:
+    # Extracción de Moods
+    for mood, keywords in moods_keywords.items():
+        if mood in user_input or any(word in user_input for word in keywords):
             preferences["mood"] = mood
+            break  # Solo toma el primer mood encontrado
 
     # Busca años de 4 dígitos (ej: 2015)
     year_match = re.search(r'\b(19\d{2}|20\d{2})\b', user_input)
