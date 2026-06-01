@@ -77,3 +77,6 @@ def extract_preferences(user_input):
         preferences["rating"] = float(rating_match.group(1))
 
     return preferences
+
+
+extract_preferences("Im felling as classic feel, I would like to seesomething from the 90s, I want to see something with spanish dubbing, I want to see something with a rating above 7, I want to see something with a rating above")
