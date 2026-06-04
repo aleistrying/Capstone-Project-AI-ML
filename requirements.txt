@@ -1,6 +1,9 @@
 pandas
 numpy
 scikit-learn
-streamlit
+joblib
 nltk
-fastapi
+spacy
+streamlit
+rapidfuzz
+requests
