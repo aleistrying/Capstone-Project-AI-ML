@@ -1,73 +1,59 @@
 """
-Módulo del flujo principal del chatbot de recomendación de películas.
+Módulo del flujo principal del chatbot de recomendación de películas CineAssist.
 """
 
-# Importar funciones de otros módulos del proyecto
 import sys
+# Asegura que Databricks encuentre tus módulos en la carpeta src
 sys.path.append('/Workspace/Users/d.esteban.am@gmail.com/AI-and-ML-Laboratory-Databricks/src')
 
+import pandas as pd
 from nlp.nlp_preferences import extract_preferences
-
-# TODO: Estas funciones deben ser creadas/importadas según tu implementación
-# from recommender.recommender_engine import recommend_on_the_fly
-# from utils.explanation_generator import generate_explanation
-
+from utils.explanation_generator import generate_explanation
+from recommender.recommender_engine import recommend_on_the_fly
 
 def chatbot_response(user_input, state_dict, movies_df, vectorizer, tfidf_matrix):
     """
-    Función principal del chatbot que procesa la entrada del usuario y genera recomendaciones.
-    
-    Args:
-        user_input (str): Texto ingresado por el usuario
-        state_dict (dict): Diccionario con el estado de la conversación
-        movies_df (pd.DataFrame): DataFrame con las películas
-        vectorizer: Vectorizador TF-IDF entrenado
-        tfidf_matrix: Matriz TF-IDF de las películas
-        
-    Returns:
-        tuple: (respuesta del chatbot, estado actualizado)
+    Procesa la entrada del usuario, gestiona el estado y devuelve recomendaciones con explicaciones.
     """
-    # 1. Extraer preferencias usando el módulo de la Fase 4
+    # 1. Extract preferences from nlp.py file --> extract_preferences function
     prefs = extract_preferences(user_input)
     
-    # 2. Actualizar el estado global de la conversación
+    # 2. Actualization of the global state of the conversation
     state_dict.update(prefs)
     
-    # 3. Lógica de aclaración (Preguntas de control)
+    # 3. Aclaration logic, in the case of missing at least basic information (Control questions)
     if not state_dict.get('genres'):
-        return "¡Hola! Para ayudarte mejor, ¿qué género te apetece ver hoy?", state_dict
+        return "¡Hello! to help you to find something, ¿what gender would you like to see?", state_dict
     
     if state_dict.get('year') is None:
-        return "¿Tienes alguna preferencia de época? Por ejemplo, algo de los '90s' o algo 'reciente'.", state_dict
+        return "¿Do you have any idea of year o time that you would like to see, or do you prefer something new?", state_dict
 
-    # 4. Si tenemos suficiente info, llamar al recomendador (Fase 3)
-    # query_text combina las preferencias para la búsqueda "on-the-fly"
+    # 4. Motor de Recomendación "On-the-fly"
+    # Combinamos el texto libre, géneros y mood para crear una consulta robusta
     query_text = f"{state_dict.get('free_text', '')} {' '.join(state_dict.get('genres', []))} {state_dict.get('mood') or ''}"
     
-    # TODO: Implementar recommend_on_the_fly
-    # recommendations = recommend_on_the_fly(query_text, movies_df, vectorizer, tfidf_matrix)
+    # Llamada al motor que calcula la similitud de coseno en tiempo real
+    recommendations = recommend_on_the_fly(query_text, movies_df, vectorizer, tfidf_matrix)
     
-    # Por ahora, retornamos un mensaje placeholder
-    response = f"Buscaría películas de: {', '.join(state_dict.get('genres', []))}"
-    if state_dict.get('year'):
-        response += f" del año {state_dict.get('year')}"
+    if recommendations.empty:
+        return "Lo siento, no encontré películas que coincidan exactamente. ¿Podrías intentar con otros términos?", state_dict
+
+    # 5. Generación de Respuesta Final con Explicabilidad (Fase 8)
+    # El MVP requiere: Top 5, puntaje de similitud y una breve explicación
+    response = "### 🎬 ¡He encontrado estas opciones para ti!\n\n"
     
-    # 5. Generar respuesta final con explicaciones (cuando tengas recommend_on_the_fly)
-    # response = "¡He encontrado estas opciones para ti!\n"
-    # for _, movie in recommendations.iterrows():
-    #     explanation = generate_explanation(movie, state_dict)
-    #     response += f"- {movie['title']}: {explanation}\n"
+    for _, movie in recommendations.iterrows():
+        # Generar la justificación personalizada para cada recomendación
+        explanation = generate_explanation(movie, state_dict)
+        
+        response += f"**{movie['title']}** (Rating: {movie.get('vote_average', 'N/A')})\n"
+        response += f"> 💡 {explanation}\n\n"
         
     return response, state_dict
 
-
-# Función auxiliar para inicializar el estado
 def initialize_conversation_state():
     """
-    Inicializa el diccionario de estado de la conversación.
-    
-    Returns:
-        dict: Estado inicial vacío
+    Inicializa el esquema de preferencias para el chatbot.
     """
     return {
         "genres": [],
