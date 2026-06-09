@@ -1,0 +1,261 @@
+================================================================================
+                    CINEASSIST METRICS EVALUATION WORKFLOW
+================================================================================
+
+YOUR CHATBOT EVALUATION IN 3 SIMPLE STEPS:
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           STEP 1: EXPLORE DATA                              │
+│                                                                             │
+│  Command:                                                                   │
+│  $ python src/metrics/setup_and_run.py --action explore                    │
+│                                                                             │
+│  This shows you:                                                            │
+│  ✓ All movies in your dataset                                              │
+│  ✓ Movies grouped by genre with their movieIds                             │
+│  ✓ High-rated movies (rating > 8.0)                                        │
+│  ✓ Movies from different decades                                           │
+│  ✓ Movies in different languages                                           │
+│                                                                             │
+│  Example Output:                                                            │
+│  ────────────────────────────────────────                                   │
+│  ACTION movies (first 5 movieIds):                                          │
+│    [1, 2, 3, 5, 50]                                                         │
+│                                                                             │
+│  COMEDY movies (first 5 movieIds):                                          │
+│    [10, 15, 20, 25, 30]                                                     │
+│                                                                             │
+│  DRAMA movies (first 5 movieIds):                                           │
+│    [40, 42, 45, 48, 52]                                                     │
+│                                                                             │
+│  HIGH RATED MOVIES (> 8.0):                                                 │
+│    Found 250 highly-rated movies                                            │
+│    Sample movieIds: [100, 102, 105, 110, 115]                              │
+│                                                                             │
+│  ⏱️  Time: ~30 seconds                                                       │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                     ↓
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      STEP 2: UPDATE TEST DATA                               │
+│                                                                             │
+│  File to Edit:                                                              │
+│  src/metrics/test_data.py                                                   │
+│                                                                             │
+│  What to do:                                                                │
+│  1. Open the file                                                           │
+│  2. For each test scenario, REPLACE the relevant_movie_ids with:           │
+│     → MovieIds you copied from Step 1                                      │
+│                                                                             │
+│  Example:                                                                   │
+│  ────────                                                                   │
+│  {                                                                           │
+│      "id": "test_01_action_movie",                                          │
+│      "user_input": "I want an action movie with lots of fights...",         │
+│      "relevant_movie_ids": [1, 2, 3, 5, 50],  ← Copy from Step 1 output   │
+│      "description": "Action movie with fighting and explosions"            │
+│  },                                                                         │
+│  {                                                                           │
+│      "id": "test_02_comedy",                                                │
+│      "user_input": "recommend me a funny comedy movie...",                  │
+│      "relevant_movie_ids": [10, 15, 20, 25, 30],  ← From Step 1            │
+│      "description": "Funny comedy for entertainment"                       │
+│  },                                                                         │
+│                                                                             │
+│  Tips:                                                                      │
+│  • Copy 5 movieIds per scenario (from the explore output)                  │
+│  • Choose movieIds that match the description                              │
+│  • 10 scenarios total to update                                            │
+│                                                                             │
+│  ⏱️  Time: ~5 minutes                                                        │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                     ↓
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      STEP 3: RUN EVALUATION                                 │
+│                                                                             │
+│  Command:                                                                   │
+│  $ python src/metrics/setup_and_run.py --action run                        │
+│                                                                             │
+│  This produces:                                                             │
+│  ✓ Chatbot recommendations for each test scenario                          │
+│  ✓ Precision, Recall, Accuracy, F1 Score, MRR metrics                      │
+│  ✓ Average metrics across all tests                                        │
+│  ✓ CSV file with detailed results                                          │
+│                                                                             │
+│  Example Output:                                                            │
+│  ────────────────────────────────────────────────────────────────────────   │
+│  [test_01_action_movie] Action movie with fighting                         │
+│  User Input: I want an action movie with lots of fights and explosions     │
+│                                                                             │
+│  Recommended Movie IDs: [1, 2, 5, 10, 15]                                  │
+│  Relevant Movie IDs:    [1, 2, 3, 5, 50]                                   │
+│                                                                             │
+│  Metrics:                                                                   │
+│    Precision:  0.800  ← 80% of recommendations were correct                │
+│    Recall:     0.600  ← Found 60% of all relevant movies                   │
+│    Accuracy:   0.950  ← Overall 95% correctness                            │
+│    F1 Score:   0.686  ← Balanced score (0.6+ is good)                     │
+│    MRR:        1.000  ← First relevant movie at rank 1 (perfect!)          │
+│                                                                             │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│  AVERAGE METRICS (across all 10 test scenarios)                            │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│  Average Precision:  0.750  ← Overall quality of recommendations           │
+│  Average Recall:     0.680  ← Overall coverage                             │
+│  Average Accuracy:   0.920  ← Overall correctness                          │
+│  Average F1 Score:   0.710  ← Overall balanced performance                 │
+│  Average MRR:        0.850  ← Ranking quality                              │
+│                                                                             │
+│  Files Created:                                                             │
+│  • evaluation_results.csv ← Detailed results in spreadsheet format         │
+│                                                                             │
+│  ⏱️  Time: ~1-2 minutes                                                      │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+                            METRIC INTERPRETATION
+================================================================================
+
+PRECISION (How good are the recommendations?)
+  Formula: (# of relevant movies we recommended) / (# of movies we recommended)
+
+  Precision 0.800 = 80% of our recommendations were relevant
+  ✓ Good range: > 0.70
+  → If low: recommender is suggesting irrelevant movies
+
+RECALL (How complete are the results?)
+  Formula: (# of relevant movies we recommended) / (# of all relevant movies)
+
+  Recall 0.600 = We found 60% of all relevant movies
+  ✓ Good range: > 0.60
+  → If low: recommender is missing many relevant movies
+
+ACCURACY (Overall correctness)
+  Formula: (Correct predictions) / (Total items in dataset)
+
+  Accuracy 0.950 = 95% of all items were classified correctly
+  ✓ Good range: > 0.70
+
+F1 SCORE (Balanced performance)
+  Formula: Harmonic mean of Precision and Recall
+
+  F1 0.686 = Good balance between precision and recall
+  ✓ Good range: > 0.60
+  → Use this when you want both precision AND recall to be good
+
+MRR (How early are relevant results?)
+  Formula: 1 / (rank of first relevant movie found)
+
+  MRR 1.000 = First relevant movie at rank 1 (perfect!)
+  MRR 0.500 = First relevant movie at rank 2
+  ✓ Good range: > 0.50
+  → If low: relevant movies are appearing too late in ranking
+
+
+================================================================================
+                            GOALS & EXPECTATIONS
+================================================================================
+
+MINIMUM ACCEPTABLE (MVP):
+  • Precision > 0.60
+  • Recall > 0.50
+  • F1 Score > 0.55
+
+GOOD PERFORMANCE:
+  • Precision > 0.70
+  • Recall > 0.60
+  • F1 Score > 0.65
+
+EXCELLENT PERFORMANCE:
+  • Precision > 0.80
+  • Recall > 0.75
+  • F1 Score > 0.77
+
+
+================================================================================
+                            FILE LOCATIONS
+================================================================================
+
+Files you interact with:
+├── src/metrics/test_data.py              ✏️  UPDATE THIS (Step 2)
+├── src/metrics/setup_and_run.py          📄 Helper script (don't edit)
+├── src/metrics/metrics.py                📄 Metric calculations (don't edit)
+├── src/metrics/evaluator.py              📄 Main evaluator (don't edit)
+├── evaluation_results.csv                📊 Generated after running
+├── METRICS_QUICK_START.md                📖 Quick reference
+├── METRICS_WORKFLOW.txt                  📖 This file
+└── src/metrics/README.md                 📖 Full documentation
+
+
+================================================================================
+                            TROUBLESHOOTING
+================================================================================
+
+❌ "ModuleNotFoundError: No module named 'recommender'"
+   → Make sure you run from project root directory
+   → Try: cd d:\ingepsicomaster\Projects\Capstone-Project-AI-ML
+
+❌ "Could not find data/movies_final.csv"
+   → Your data is in Databricks. Either:
+     a) Run in Databricks notebook
+     b) Export data: spark.read.table(...).toPandas().to_csv(...)
+
+❌ "Could not load tfidf_vectorizer.pkl"
+   → Make sure notebooks/03_Vectorization.ipynb has been run first
+   → Check that models/ folder contains the pkl files
+
+❌ "Test scenarios have empty relevant_movie_ids"
+   → You forgot Step 2! Edit test_data.py with movieIds from Step 1
+
+❌ "Recommender returned empty results"
+   → Your query might be too specific
+   → Or the tfidf_matrix might not be loaded properly
+   → Check that tfidf_matrix.pkl exists in models/ folder
+
+
+================================================================================
+                            QUICK COMMANDS
+================================================================================
+
+# View help
+python src/metrics/setup_and_run.py --help
+
+# Step 1: Explore data
+python src/metrics/setup_and_run.py --action explore
+
+# Step 2: Edit file
+code src/metrics/test_data.py
+
+# Step 3: Run evaluation
+python src/metrics/setup_and_run.py --action run
+
+# View results
+cat evaluation_results.csv
+
+
+================================================================================
+                        EXPECTED WORKFLOW TIME
+================================================================================
+
+Step 1 (Explore):     ~30 seconds
+Step 2 (Update):      ~5 minutes (copy movieIds)
+Step 3 (Evaluate):    ~1-2 minutes (recommender inference)
+────────────────────────────────────
+TOTAL:                ~10 minutes
+
+
+================================================================================
+                            YOU ARE HERE
+================================================================================
+
+   STEP 1        STEP 2        STEP 3
+   [Explore]  →  [Update]  →   [Evaluate]
+      ✓           ⏳            (Next)
+
+Next: Run "python src/metrics/setup_and_run.py --action explore"
+
+================================================================================
