@@ -1,0 +1,148 @@
+{
+    "intents":[
+        {
+            "tag":"greeting",
+            "patterns":[
+                "hello", 
+                "hi", 
+                "hey",
+                "hi there",
+                "good day",
+                "good morning",
+                "good afternoon",
+                "good evening"
+            ],
+            "responses":[
+                "Hello! How can I assist you today?",
+                "Hi there! What can I do for you?",
+                "Hey! How can I help you?"
+            ],
+            "context_set":[
+                ""
+            ]
+        },
+        {
+            "tag":"goodbye",
+            "patterns":[
+                "bye", 
+                "goodbye", 
+                "see you later",
+                "farewell",
+                "take care",
+                "Nice talking to you, goodbye!",
+                "Till next time! Goodbye!"
+            ],
+            "responses":[
+                "Goodbye! Have a great day!",
+                "See you later! Take care!",
+                "Farewell! Stay safe!",
+                "Take care! See you soon!"
+                
+            ],
+            "context_set":[
+                ""
+            ]
+        },
+        {
+            "tag":"thanks",
+            "patterns":[
+                "thanks", 
+                "thank you", 
+                "that's helpful",
+                "thanks a lot",
+                "thank you so much",
+                "I appreciate it"
+            ],
+            "responses":[
+                "You're welcome! Happy to help!",
+                "No problem! Let me know if you need anything else.",
+                "Anytime! I'm here to assist you."
+            ],
+            "context_set":[
+                ""
+            ]
+        },
+        {
+            "tag":"noanswer",
+            "patterns":[
+                ""
+            ],
+            "responses":[
+                "Sorry, I can't understand you.",
+                "Please give me more information.",
+                "Not sure I understand. Can you rephrase?"
+            ],
+            "context_set":[
+                ""
+            ]
+        },
+        {
+            "tag":"options",
+            "patterns":[
+                "what can you do?", 
+                "what help do you provide?", 
+                "what services do you offer?",
+                "how can you assist me?",
+                "what are your capabilities?"
+            ],
+            "responses":[
+                "I can assist you with movies recommendations. Just ask me anything!",
+                "I'm here to help with whatever you need. Just let me know how I can assist you!"
+            ],
+            "context_set":[
+                ""
+            ]
+        },
+        {
+            "tag":"movies",
+            "patterns":[
+                "recommend me a movie", 
+                "suggest a movie", 
+                "what movie should I watch?",
+                "can you recommend a movie?",
+                "I want to watch a movie"
+            ],
+            "responses":[
+                "Sure! What genre are you interested in?",
+                "I'd be happy to recommend a movie. What type of movies do you like?",
+                "Tell me a genre, actor, director, or keyword, and I'll find a movie for you!"
+            ],
+            "context_set":[
+                ""
+            ]
+        },
+        {
+            "tag":"genre",
+            "patterns":[
+                "action: fights, explosions, and high-energy scenes", 
+                "comedy: light-hearted and humorous", 
+                "drama: emotional and character-driven",
+                "horror: scary and suspenseful",
+                "sci-fi: futuristic and imaginative",
+                "romance: heartwarming and emotional",
+                "thriller: suspenseful and exciting",
+                "animation: animated films for all ages",
+                "documentary: informative and educational"
+            ],
+            "responses":[
+                "Great choice! Here are some {genre} movies you might enjoy: [list of movies].",
+                "I have some fantastic {genre} movie recommendations for you: [list of movies]."
+            ],
+            "context_set":[
+                ""
+            ]
+        },
+        {
+            "tag":"movie_search",
+            "patterns":[
+                "I like Interstellar",
+                "movies similar to Titanic",
+                "recommend something like Avatar",
+                "find movies like Inception"
+            ],
+            "responses":[
+                "Tell me a movie you like."
+            ]
+        }
+    ]
+}
