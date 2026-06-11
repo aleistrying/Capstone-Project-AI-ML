@@ -40,7 +40,7 @@ def load_data_databricks():
     try:
         # This requires Databricks notebook environment
         movies_df = spark.read.table(
-            "workspace.datasets.movies_final").toPandas()
+            "workspace.default.movies").toPandas()
         print("[OK] Loaded from Databricks workspace.datasets.movies_final")
         return movies_df
     except:
