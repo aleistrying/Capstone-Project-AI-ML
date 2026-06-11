@@ -16,22 +16,22 @@ import pandas as pd
 import sys
 from pathlib import Path
 
-# Add src to path
+# Add src to path FIRST (before importing modules)
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from metrics.evaluator import Evaluator
-from metrics.test_data import get_test_scenarios
 from recommender.recommender_engine import recommend_on_the_fly
+from metrics.test_data import get_test_scenarios
+from metrics.evaluator import Evaluator
 
 
 def load_data_local():
     """Try to load data from local CSV files."""
     try:
         movies_df = pd.read_csv("data/movies_final.csv")
-        print("✓ Loaded movies_final.csv")
+        print("[OK] Loaded movies_final.csv")
         return movies_df
     except FileNotFoundError:
-        print("✗ Could not find data/movies_final.csv")
+        print("[ERROR] Could not find data/movies_final.csv")
         return None
 
 
@@ -39,11 +39,12 @@ def load_data_databricks():
     """Try to load data from Databricks (requires Spark session)."""
     try:
         # This requires Databricks notebook environment
-        movies_df = spark.read.table("workspace.datasets.movies_final").toPandas()
-        print("✓ Loaded from Databricks workspace.datasets.movies_final")
+        movies_df = spark.read.table(
+            "workspace.datasets.movies_final").toPandas()
+        print("[OK] Loaded from Databricks workspace.datasets.movies_final")
         return movies_df
     except:
-        print("✗ Databricks not available (not in notebook environment)")
+        print("[ERROR] Databricks not available (not in notebook environment)")
         return None
 
 
@@ -58,7 +59,7 @@ def load_movies_data():
         movies_df = load_data_databricks()
 
     if movies_df is None:
-        print("\n⚠️  ERROR: Could not load movie data from any source.")
+        print("\n[WARNING] ERROR: Could not load movie data from any source.")
         print("\nYou have two options:")
         print("1. Run this script from a Databricks notebook")
         print("2. Export your movie data to CSV: data/movies_final.csv")
@@ -77,7 +78,12 @@ def explore_movies(movies_df):
 
     # Show sample
     print("\nSample movies:")
-    print(movies_df[['movieId', 'title', 'genres_list', 'vote_average', 'release_year']].head(10))
+    cols_to_show = ['movieId', 'title', 'genres_list', 'vote_average']
+    if 'release_year' in movies_df.columns:
+        cols_to_show.append('release_year')
+    elif 'release_date' in movies_df.columns:
+        cols_to_show.append('release_date')
+    print(movies_df[cols_to_show].head(10))
 
     # Analyze genres
     if 'genres_list' in movies_df.columns:
@@ -96,12 +102,14 @@ def explore_movies(movies_df):
                     pass
 
         for genre in sorted(all_genres):
-            count = sum(1 for g in movies_df['genres_list'] if isinstance(g, list) and genre in g)
+            count = sum(1 for g in movies_df['genres_list'] if isinstance(
+                g, list) and genre in g)
             print(f"  {genre}: {count} movies")
 
     # Show movies by genre
     print("\n--- FIND MOVIEIDS BY GENRE ---")
-    genres_to_find = ['action', 'comedy', 'drama', 'horror', 'sci-fi', 'romance']
+    genres_to_find = ['action', 'comedy',
+                      'drama', 'horror', 'sci-fi', 'romance']
 
     for target_genre in genres_to_find:
         matching = []
@@ -128,7 +136,15 @@ def explore_movies(movies_df):
     # Recent movies
     if 'release_year' in movies_df.columns:
         print("\n--- MOVIES FROM 2000s (2000-2009) ---")
-        year_2000s = movies_df[(movies_df['release_year'] >= 2000) & (movies_df['release_year'] <= 2009)]
+        year_2000s = movies_df[(movies_df['release_year'] >= 2000) & (
+            movies_df['release_year'] <= 2009)]
+        if len(year_2000s) > 0:
+            print(f"Found {len(year_2000s)} movies from 2000s")
+            print(f"Sample movieIds: {year_2000s['movieId'].head(5).tolist()}")
+    elif 'release_date' in movies_df.columns:
+        print("\n--- MOVIES FROM 2000s (2000-2009) ---")
+        movies_df['year'] = pd.to_datetime(movies_df['release_date'], errors='coerce').dt.year
+        year_2000s = movies_df[(movies_df['year'] >= 2000) & (movies_df['year'] <= 2009)]
         if len(year_2000s) > 0:
             print(f"Found {len(year_2000s)} movies from 2000s")
             print(f"Sample movieIds: {year_2000s['movieId'].head(5).tolist()}")
@@ -142,7 +158,8 @@ def explore_movies(movies_df):
 
         spanish = movies_df[movies_df['original_language'] == 'es']
         if len(spanish) > 0:
-            print(f"\nSpanish movies - Sample movieIds: {spanish['movieId'].head(5).tolist()}")
+            print(
+                f"\nSpanish movies - Sample movieIds: {spanish['movieId'].head(5).tolist()}")
 
 
 def load_models():
@@ -155,16 +172,16 @@ def load_models():
 
     try:
         vectorizer = joblib.load("models/tfidf_vectorizer.pkl")
-        print("✓ Loaded tfidf_vectorizer.pkl")
+        print("[OK] Loaded tfidf_vectorizer.pkl")
     except:
-        print("✗ Could not load tfidf_vectorizer.pkl")
+        print("[ERROR] Could not load tfidf_vectorizer.pkl")
         return None, None
 
     try:
         tfidf_matrix = joblib.load("models/tfidf_matrix.pkl")
-        print("✓ Loaded tfidf_matrix.pkl")
+        print("[OK] Loaded tfidf_matrix.pkl")
     except:
-        print("✗ Could not load tfidf_matrix.pkl")
+        print("[ERROR] Could not load tfidf_matrix.pkl")
         tfidf_matrix = None
 
     return vectorizer, tfidf_matrix
@@ -229,8 +246,10 @@ def main():
         empty_scenarios = [s for s in scenarios if not s['relevant_movie_ids']]
 
         if empty_scenarios:
-            print(f"\n⚠️  WARNING: {len(empty_scenarios)} test scenarios have empty relevant_movie_ids")
-            print("\nRun with --action explore first to find movieIds, then update test_data.py")
+            print(
+                f"\n[WARNING] {len(empty_scenarios)} test scenarios have empty relevant_movie_ids")
+            print(
+                "\nRun with --action explore first to find movieIds, then update test_data.py")
             print("\nEmpty scenarios:")
             for s in empty_scenarios:
                 print(f"  - {s['id']}: {s['description']}")
