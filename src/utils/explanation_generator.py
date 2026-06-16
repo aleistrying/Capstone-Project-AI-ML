@@ -1,53 +1,62 @@
-def generate_explanation(movie_data, user_prefs):
+def generate_explanation(movie_data: dict, user_prefs: dict) -> str:
     """
-    Genera una justificación profesional en lenguaje natural para una recomendación.
-    
+    Generate a short English explanation for a movie recommendation.
+
     Args:
-        movie_data (pd.Series/dict): Datos de la película recomendada.
-        user_prefs (dict): Preferencias extraídas (Phase 4).
+        movie_data: Dict or Series with keys title, genres / genres_list,
+                    release_year / year, vote_average / rating, overview.
+        user_prefs: Preferences dict from nlp_service.extract().
     """
     reasons = []
-    
-    # 1. Coincidencia de Géneros (Phase 13: "Matches genre") [2]
-    movie_genres = str(movie_data.get('genres_list', '')).lower()
-    common_genres = [g for g in user_prefs.get('genres', []) if g.lower() in movie_genres]
-    if common_genres:
-        # Usamos negrita para resaltar en la UI de Streamlit [5]
-        reasons.append(f"coincide con tu interés en el cine de **{', '.join(common_genres)}**")
-    
-    # 2. Coincidencia de Época o Año [4]
-    movie_year = str(movie_data.get('release_year', ''))
-    req_year = str(user_prefs.get('year', ''))
-    if req_year and req_year[:3] in movie_year:
-        reasons.append(f"es un título destacado de la época que buscas (**{movie_year}**)")
 
-    # 3. Coincidencia de Mood y Temas (Phase 13: "Similar tone") [2, 6]
-    mood = user_prefs.get('mood')
-    overview = str(movie_data.get('overview', '')).lower()
-    keywords = str(movie_data.get('keywords', '')).lower()
-    
-    if mood:
-        if mood.lower() in overview or mood.lower() in keywords:
-            reasons.append(f"presenta esa atmósfera **{mood}** que mencionaste")
-
-    # 4. Referencia a Película Similar (Si el usuario dio una referencia) [4, 6]
-    similar_to = user_prefs.get('similar_to')
-    if similar_to:
-        reasons.append(f"tiene una narrativa similar a **{similar_to}**")
-
-    # 5. Factor de Calidad (Basado en Ratings de MovieLens/TMDB) [3, 7]
-    vote_avg = movie_data.get('vote_average', 0)
-    if vote_avg >= 8.0:
-        reasons.append("es una de las obras mejor valoradas por la crítica")
-
-    # --- Construcción Gramatical de la Frase ---
-    if not reasons:
-        return f"Te la recomiendo por su trama única y su sólida calificación de {vote_avg}."
-
-    # Unir las razones usando comas y una "y" al final para que suene natural
-    if len(reasons) == 1:
-        explanation = f"Te la recomiendo porque {reasons}."
+    # Genre overlap
+    raw_genres = movie_data.get("genres_list") or movie_data.get("genres") or ""
+    if isinstance(raw_genres, list):
+        movie_genres_str = " ".join(str(g) for g in raw_genres).lower()
     else:
-        explanation = f"Te la recomiendo porque {', '.join(reasons[:-1])} y {reasons[-1]}."
-    
-    return explanation
+        movie_genres_str = str(raw_genres).lower()
+
+    requested_genres = user_prefs.get("genres") or []
+    matching_genres = [g for g in requested_genres if g.lower() in movie_genres_str]
+    if matching_genres:
+        reasons.append(f"matches your interest in **{', '.join(matching_genres)}**")
+
+    # Year / decade match
+    movie_year = movie_data.get("release_year") or movie_data.get("year")
+    year_range = user_prefs.get("year_range")
+    if movie_year and year_range:
+        start, end = year_range[0], year_range[-1]
+        if start <= int(movie_year) <= end:
+            decade_label = f"{start}s" if start != end else str(start)
+            reasons.append(f"fits the **{decade_label}** era you asked for")
+
+    # Mood match
+    moods = user_prefs.get("mood") or []
+    overview = str(movie_data.get("overview", "")).lower()
+    for mood in moods:
+        if mood.lower() in overview or mood.lower() in movie_genres_str:
+            reasons.append(f"captures the **{mood}** tone you mentioned")
+            break
+
+    # Similar-to reference
+    similar_to = user_prefs.get("similar_to")
+    if similar_to:
+        reasons.append(f"has a narrative style similar to **{similar_to}**")
+
+    # Quality signal
+    rating = movie_data.get("vote_average") or movie_data.get("rating") or 0
+    try:
+        rating = float(rating)
+    except (TypeError, ValueError):
+        rating = 0.0
+    if rating >= 8.0:
+        reasons.append(f"is critically acclaimed (rating **{rating:.1f}**)")
+    elif rating >= 7.0:
+        reasons.append(f"has a solid rating of **{rating:.1f}**")
+
+    if not reasons:
+        return f"Recommended based on its unique story and a rating of {rating:.1f}."
+
+    if len(reasons) == 1:
+        return f"Recommended because it {reasons[0]}."
+    return f"Recommended because it {', '.join(reasons[:-1])} and {reasons[-1]}."
