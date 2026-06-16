@@ -1,9 +1,22 @@
+# Core data and ML
 pandas
 numpy
 scikit-learn
 joblib
+scipy
+
+# NLP
 nltk
 spacy
+
+# Web / API
+fastapi
+uvicorn[standard]
+pydantic
+
+# UI
 streamlit
+
+# Utilities
 rapidfuzz
 requests
