@@ -1,394 +1,331 @@
 # CineAssist
 
-**CineAssist** is an AI-powered movie recommendation chatbot that helps users find movies through natural language preferences instead of manually browsing long lists or rigid filters.
-
-Users can describe what they want to watch using details such as genre, mood, language, age rating, favorite movies, year range, or themes. The system processes those preferences, compares them with a prepared movie dataset, and returns ranked movie recommendations with short explanations.
+**CineAssist** is an NLP-based movie recommendation chatbot. Users write a free-text request or answer optional starter questions. The system converts the input into a structured preference object, uses TF-IDF + cosine similarity to retrieve ranked recommendations, and explains each result in plain language.
 
 ---
 
 ## Project Information
 
-| Field | Details |
-|---|---|
-| Course | AML-2403 AI and ML Lab |
-| Semester | Spring 2026 |
-| Section | OTT01 |
-| Group | Group 1 |
-| Project Title | CineAssist: An AI Movie Recommendation Chatbot with Optional Multilingual Support |
-| Faculty Supervisor | William Pourmajidi |
-| Initial Team Lead | Alejandro Parparcen Grillet |
+| Field              | Details                                                                           |
+| ------------------ | --------------------------------------------------------------------------------- |
+| Course             | AML-2403 AI and ML Lab                                                            |
+| Semester           | Spring 2026                                                                       |
+| Section            | OTT01                                                                             |
+| Group              | Group 1                                                                           |
+| Project Title      | CineAssist: An AI Movie Recommendation Chatbot with Optional Multilingual Support |
+| Faculty Supervisor | William Pourmajidi                                                                |
 
 ---
 
 ## Team Members
 
-| Name | Student ID | Main Contribution Area |
-|---|---:|---|
-| Alejandro Parparcen Grillet | C0960408 | Project leadership, architecture, integration, GitHub coordination, backend/UI support |
-| Carlos Antonio Graniel Manrique | C0966684 | Movie database, recommendation logic, feature schema, UI support |
-| Lili Marcela Perez Clavijo | C0964898 | Chatbot conversation flow and NLP preference extraction |
-| Brayan Yesid Roncancio Suarez | C0966032 | Multilingual/translation feasibility and model research |
-| David Aponte Monroy | C0967956 | Testing, evaluation, metrics, model comparison, optional computer vision research |
-| Motunrayo Aduloju | C0968107 | Dataset preparation, user-flow validation, feature engineering, prototype support |
+| Name                            | Student ID | Main Contribution Area                                                |
+| ------------------------------- | ---------: | --------------------------------------------------------------------- |
+| Alejandro Parparcen Grillet     |   C0960408 | Architecture, backend integration, GitHub coordination, final project |
+| Carlos Antonio Graniel Manrique |   C0966684 | Movie database, recommendation logic, feature schema                  |
+| Lili Marcela Perez Clavijo      |   C0964898 | Chatbot conversation flow, NLP preference extraction                  |
+| Brayan Yesid Roncancio Suarez   |   C0966032 | Multilingual normalization, language detection                        |
+| David Aponte Monroy             |   C0967956 | Testing, evaluation, metrics, model comparison                        |
+| Motunrayo Aduloju               |   C0968107 | Dataset preparation, feature engineering, prototype support           |
 
 ---
 
-## Problem Statement
+## Architecture Overview
 
-Choosing a movie can be time-consuming because streaming platforms often provide too many options, limited filters, and recommendations that are not always aligned with a user's current mood or context. A user may want something specific, such as:
+The system is divided into four blocks:
 
-- A highly rated romantic comedy from the 2000s
-- A family-friendly adventure movie
-- A suspense movie similar to one they already enjoyed
-- A movie in a specific language or age rating
+```
+User Input
+    │
+    ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Frontend  (app/streamlit_app.py or frontend/)                  │
+│  • Chatbox / textarea                                           │
+│  • Optional starter questions (sidebar)                        │
+│  • Movie recommendation cards                                  │
+└────────────────────────┬────────────────────────────────────────┘
+                         │ raw_text + form_data
+                         ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Backend Controller  (backend/main.py)                          │
+│                                                                 │
+│  1. language_service  → detect language, normalize domain terms │
+│  2. nlp_service       → extract structured preferences          │
+│  3. recommender_service → TF-IDF + cosine similarity           │
+│  4. explanation_service → generate per-movie explanation        │
+└────────────────────────┬────────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Source Modules  (src/)                                         │
+│  • nlp/nlp_preferences.py    — preference extraction           │
+│  • recommender/recommender_engine.py — cosine similarity       │
+│  • utils/explanation_generator.py   — explanation text         │
+│  • metrics/                         — evaluation harness       │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-CineAssist addresses this problem by allowing users to describe their preferences naturally and receive personalized, explainable movie recommendations.
+### Multilingual Normalization Scope
 
----
+The in-house translation layer targets the **movie domain only** — not general-purpose translation. It:
 
-## Project Goal
+1. Detects language via stopword heuristics (English, Spanish, French, Portuguese).
+2. Maps multilingual synonyms to canonical English genre/mood labels (`chistosa` → `comedy`, `de terror` → `horror`).
+3. Parses decade expressions in multiple languages (`años 90` → `[1990, 1999]`).
+4. Returns a normalized English string and a structured preference object for the recommender.
 
-The goal is to build a working AI/ML prototype where a user can enter movie preferences, receive ranked recommendations, and understand why each movie was suggested.
+Full sentence translation is a planned extension. The integration point is `src/translation/translator.py` — the functions are stubbed with clear `TODO` comments and wiring instructions for Google Translate, DeepL, or HuggingFace offline models. The `backend/services/translation_service.py` wrapper calls these stubs and is ready to activate once a backend is chosen.
 
-The project combines:
+### Recommendation Pipeline
 
-- Dataset preparation
-- Feature engineering
-- Natural language processing
-- Similarity-based recommendation
-- Chatbot interaction design
-- Model evaluation
-- UI/API integration
-- GitHub-based collaboration and documentation
+```
+query_text  →  TfidfVectorizer.transform()  →  cosine_similarity()
+            →  filter by language / year / min_rating
+            →  sort by similarity_score
+            →  top-N results + explanations
+```
 
----
-
-## MVP Scope
-
-The minimum viable product focuses on a task-specific movie recommendation chatbot.
-
-### Included in the MVP
-
-- Public or static movie dataset
-- Data cleaning and preprocessing
-- Movie feature vectors using metadata such as genres, descriptions, keywords, ratings, year, and language
-- Baseline recommender using simple filters
-- ML/NLP recommender using TF-IDF and cosine similarity
-- Basic preference extraction from user input
-- Chatbot-style interaction flow
-- Ranked movie recommendations
-- Short explanation for each recommendation
-- Evaluation using predefined user scenarios and metrics
-- GitHub repository with code, issues, progress evidence, and documentation
-
-### Out of Scope for the MVP
-
-- General-purpose conversational AI
-- Live streaming data integration
-- Full production deployment requirements
-- Recommendation for product categories beyond movies
-- Paid APIs unless a free academic option is confirmed
-
----
-
-## Stretch Goals
-
-These features are optional and should only be considered after the core recommender chatbot is stable.
-
-- **Multilingual support:** Allow users to enter preferences or receive responses in more than one language.
-- **Face-recognition login:** Explore a simple face-recognition login module using OpenCV or MediaPipe.
-- **Deployment:** Deploy the prototype using a free or accessible platform such as Streamlit Community Cloud, Render, or Railway.
-
----
-
-## Planned Technology Stack
-
-| Category | Tools / Methods | Purpose |
-|---|---|---|
-| Programming Language | Python | Data processing, machine learning, NLP, evaluation, backend prototype |
-| ML / Data Libraries | pandas, NumPy, scikit-learn | Cleaning, feature extraction, similarity scoring, model comparison |
-| NLP Methods | TF-IDF, CountVectorizer, cosine similarity, keyword extraction | Represent movie descriptions and user preferences for recommendation |
-| Data Storage | CSV or SQLite for MVP | Store movie metadata, cleaned features, and optional feedback |
-| Interface | Streamlit first; React/Next.js + FastAPI if time allows | User-facing chatbot and recommendation screen |
-| Computer Vision | OpenCV / MediaPipe | Optional face-recognition login exploration |
-| Translation | Translation API or open-source library to be confirmed | Optional bilingual input/output |
-| Development Tools | Jupyter Notebook, VS Code | Experimentation and collaboration |
-| Version Control | GitHub and GitHub Projects/Issues | Code management, sprint tasks, and weekly evidence |
-| Deployment | Streamlit Community Cloud, Render, Railway, or similar | Optional working demo deployment |
-
----
-
-## Methodology
-
-The project follows an Agile parallel sprint approach. Several workstreams can run at the same time, including dataset preparation, NLP preference extraction, chatbot flow, UI/API skeleton, and evaluation planning.
-
-### Main Steps
-
-1. **Data Preparation**
-   - Collect a movie metadata dataset.
-   - Clean missing or unusable records.
-   - Standardize genres, language, ratings, descriptions, and other relevant fields.
-
-2. **Baseline Recommender**
-   - Build a simple filtering recommender using fields such as genre, rating, and year.
-   - Use this as the comparison point for the ML/NLP recommender.
-
-3. **ML/NLP Recommender**
-   - Create movie feature vectors using metadata and text descriptions.
-   - Apply TF-IDF or CountVectorizer.
-   - Use cosine similarity to match user preferences with movie records.
-
-4. **Preference Extraction**
-   - Extract user preferences from natural language input.
-   - Identify possible genres, moods, language preferences, rating constraints, year ranges, or similar movie titles.
-
-5. **Chatbot Integration**
-   - Build a simple chatbot-style flow.
-   - Ask clarifying questions when needed.
-   - Return ranked movie recommendations.
-
-6. **Evaluation**
-   - Test with predefined user scenarios.
-   - Compare baseline and ML/NLP results.
-   - Use manual relevance scoring and precision-style metrics where appropriate.
-
-7. **Documentation and Delivery**
-   - Organize the project in GitHub.
-   - Track weekly progress through issues and reports.
-   - Prepare the final report, presentation, demo, and submission package.
+An optional **Random Forest reranker** can be added as a second stage using features: `cosine_score`, `genre_overlap`, `mood_keyword_overlap`, `year_match`, `language_match`, `rating_norm`, `popularity_norm`. The base TF-IDF recommender remains unchanged.
 
 ---
 
 ## Repository Structure
 
-The final structure may change as the project develops, but the planned organization is:
-
-```text
-cineassist/
-├── data/
-│   ├── raw/                  # Original dataset files
-│   ├── processed/            # Cleaned dataset files
-│   └── README.md             # Dataset notes and field descriptions
-│
-├── notebooks/
-│   ├── data_cleaning.ipynb
-│   ├── baseline_recommender.ipynb
-│   ├── feature_engineering.ipynb
-│   └── evaluation.ipynb
-│
-├── src/
-│   ├── data_preprocessing.py
-│   ├── recommender.py
-│   ├── preference_extraction.py
-│   ├── chatbot_flow.py
-│   └── evaluation.py
-│
+```
+Capstone-Project-AI-ML/
 ├── app/
-│   ├── streamlit_app.py
-│   └── components/
-│
-├── reports/
-│   ├── weekly_progress/
-│   └── final_report/
-│
+│   ├── streamlit_app.py          # Streamlit main page — Chat UI (run this)
+│   └── pages/
+│       ├── 1_Metrics.py          # Evaluation dashboard (Precision/Recall/F1/MRR)
+│       └── 2_NLP_Inspector.py    # NLP pipeline trace for any input text
+├── backend/
+│   ├── main.py                   # Central controller
+│   ├── api/
+│   │   └── routes.py             # FastAPI routes (optional REST API)
+│   └── services/
+│       ├── language_service.py   # Language detection + domain normalization
+│       ├── nlp_service.py        # Preference extraction wrapper
+│       ├── recommender_service.py# TF-IDF recommendation wrapper
+│       ├── explanation_service.py# Explanation wrapper
+│       └── translation_service.py# Translation wrapper (stub — see src/translation/)
+├── src/
+│   ├── nlp/
+│   │   └── nlp_preferences.py    # Core preference extraction (English)
+│   ├── recommender/
+│   │   └── recommender_engine.py # TF-IDF + cosine similarity engine
+│   ├── utils/
+│   │   └── explanation_generator.py # Natural-language explanation builder
+│   ├── chatbot/
+│   │   └── chatbot_flow.py       # Conversational wrapper (used by Streamlit)
+│   ├── translation/
+│   │   ├── __init__.py
+│   │   └── translator.py         # Translation stubs (TODO: wire real backend)
+│   ├── metrics/
+│   │   ├── evaluator.py          # Evaluator class
+│   │   ├── metrics.py            # Precision/Recall/F1/MRR/Accuracy functions
+│   │   ├── test_data.py          # 10 predefined test scenarios with real movieIds
+│   │   └── setup_and_run.py      # CLI runner for local evaluation
+│   ├── data/
+│   │   └── preprocess.py         # Downloads raw data + builds processed CSV + models
+│   └── evaluation/               # Additional evaluation scripts
+├── data/
+│   ├── raw/                      # Downloaded source files (TMDB + MovieLens)
+│   └── processed/
+│       └── movies_final.csv      # Merged, cleaned, ready for the recommender
+├── models/
+│   ├── tfidf_vectorizer.pkl      # Fitted TF-IDF vectorizer
+│   ├── tfidf_matrix.pkl          # Pre-computed movie TF-IDF matrix
+│   └── random_forest_reranker.pkl# (optional) RF reranker — not yet trained
+├── notebooks/
+│   ├── 01_data_exploration.ipynb
+│   ├── 02_NLP_cleaning.ipynb
+│   ├── 03_Vectorization.ipynb
+│   └── 04_Preferences_Extraction.ipynb
 ├── tests/
-│   └── test_recommender.py
-│
+│   ├── test_nlp_preferences.py
+│   └── test_language_service.py
+├── app.py                        # Legacy redirect → app/streamlit_app.py
+├── run.sh                        # Linux/macOS runner
+├── run.ps1                       # Windows PowerShell runner
+├── run.cmd                       # Windows CMD launcher (handles execution policy)
 ├── requirements.txt
-├── README.md
-└── .gitignore
+└── README.md
 ```
 
 ---
 
-## Installation and Setup
+## Quick Start
 
-### 1. Clone the repository
+### Option A — scripts (recommended)
 
+**Linux / macOS**
 ```bash
-git clone <repository-url>
-cd cineassist
+git clone https://github.com/aleistrying/Capstone-Project-AI-ML.git
+cd Capstone-Project-AI-ML
+chmod +x run.sh
+./run.sh            # installs deps, runs tests, launches Streamlit
 ```
 
-### 2. Create a virtual environment
-
-```bash
-python -m venv venv
+**Windows (CMD — no setup needed)**
+```cmd
+git clone https://github.com/aleistrying/Capstone-Project-AI-ML.git
+cd Capstone-Project-AI-ML
+run                 # run.cmd handles execution policy automatically
 ```
 
-Activate it:
-
-```bash
-# Windows
-venv\Scripts\activate
-
-# macOS/Linux
-source venv/bin/activate
+**Windows (PowerShell)**
+```powershell
+git clone https://github.com/aleistrying/Capstone-Project-AI-ML.git
+cd Capstone-Project-AI-ML
+.\run.ps1
 ```
 
-### 3. Install dependencies
+Available commands for all three runners:
+
+| Command | What it does |
+|---|---|
+| `./run.sh` / `run` / `.\run.ps1` | deps → tests → Streamlit |
+| `... setup` | install/update dependencies only |
+| `... test` | run test suite |
+| `... app` | launch Streamlit at http://localhost:8501 |
+| `... api` | launch FastAPI at http://localhost:8000 |
+| `... all` | both services together |
+
+---
+
+### Option B — manual setup
 
 ```bash
+git clone https://github.com/aleistrying/Capstone-Project-AI-ML.git
+cd Capstone-Project-AI-ML
+python3 -m venv .venv
+source .venv/bin/activate       # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-If `requirements.txt` has not been finalized yet, install the expected core dependencies manually:
+### Prepare data and models
+
+Run the preprocessing script — it downloads the datasets automatically and builds the TF-IDF models:
 
 ```bash
-pip install pandas numpy scikit-learn streamlit
+python src/data/preprocess.py
 ```
 
-### 4. Add dataset files
+This downloads TMDB 5000 + MovieLens from public sources, merges them, stems the text, fits the TF-IDF vectorizer, and writes:
+- `data/processed/movies_final.csv`
+- `models/tfidf_vectorizer.pkl`
+- `models/tfidf_matrix.pkl`
 
-Place the selected movie dataset inside:
+The notebooks (`01`–`04`) document each step in detail and are useful for exploration, but are not required for setup.
 
-```text
-data/raw/
-```
-
-Then run the preprocessing script or notebook to generate cleaned data inside:
-
-```text
-data/processed/
-```
-
----
-
-## Running the Prototype
-
-If using Streamlit:
+### Run manually
 
 ```bash
+# Streamlit UI
 streamlit run app/streamlit_app.py
-```
 
-The application should allow the user to enter movie preferences and receive ranked recommendations with explanations.
+# FastAPI (optional)
+uvicorn backend.api.routes:app --reload
+# → docs at http://localhost:8000/docs
 
----
-
-## Example User Inputs
-
-```text
-I want a funny family movie from the 2000s.
-```
-
-```text
-Recommend me a suspense movie similar to Inception.
-```
-
-```text
-I want a romantic comedy with a good rating, preferably in English.
-```
-
-```text
-Find me an adventure movie that is appropriate for a younger audience.
+# Tests
+python -m pytest tests/ -v
 ```
 
 ---
 
-## Expected Output
+## API Contract
 
-For each user query, the system should return a ranked list of movies similar to:
+**POST `/recommend`**
 
-```text
-1. Movie Title
-   Match reason: Similar genre, matching mood, high rating, and close year range.
+```json
+{
+  "raw_text": "quiero una pelicula chistosa para familia de los 2000",
+  "form_data": {
+    "genre": null,
+    "mood": null,
+    "year_range": null,
+    "language": null,
+    "min_rating": null,
+    "similar_to": null
+  }
+}
+```
 
-2. Movie Title
-   Match reason: Shares keywords from the user's request and fits the selected genre.
+**Response**
 
-3. Movie Title
-   Match reason: Recommended because it matches the requested theme and language.
+```json
+{
+  "detected_language": "es",
+  "normalized_query": "comedy family funny feel-good from the 2000s quiero una pelicula chistosa para familia de los 2000",
+  "preferences": {
+    "genres": ["comedy", "family"],
+    "mood": ["funny", "feel-good"],
+    "year_range": [2000, 2009],
+    "language": null,
+    "min_rating": null,
+    "similar_to": null
+  },
+  "recommendations": [
+    {
+      "title": "Movie Title",
+      "year": 2004,
+      "genres": ["Family", "Comedy"],
+      "rating": 7.8,
+      "score": 0.86,
+      "poster_url": null,
+      "explanation": "Recommended because it matches your interest in comedy, family and fits the 2000s era you asked for."
+    }
+  ],
+  "metadata": { "model": "tfidf_cosine", "reranker": "none" }
+}
 ```
 
 ---
 
-## Evaluation Plan
+## Evaluation
 
-The project will evaluate recommendation quality through:
+The `src/metrics/` module provides `Evaluator`, `calculate_precision`, `calculate_recall`, `calculate_f1_score`, and `calculate_mean_reciprocal_rank`. Predefined test scenarios live in `src/metrics/test_data.py`.
 
-- Predefined test queries
-- Manual relevance scoring
-- Comparison between simple baseline filtering and the ML/NLP recommender
-- Precision-style metrics where practical
-- Review of whether the recommendation explanation matches the user's request
+**CLI runner:**
+```bash
+python src/metrics/setup_and_run.py           # run all 10 scenarios, print table
+python src/metrics/setup_and_run.py --explore  # print dataset summary + top movies by genre
+```
 
-Example evaluation questions:
+**Streamlit Metrics page:** Launch the app and navigate to **📊 Metrics** in the sidebar — runs all scenarios interactively, shows bar charts, per-scenario detail, and a CSV download.
 
-- Did the system return movies that match the requested genre or mood?
-- Did the system correctly use language, rating, or year constraints?
-- Are the recommendation explanations understandable?
-- Does the ML/NLP recommender improve over the baseline filter?
+Metrics tracked: **Precision@5**, **Recall@5**, **F1**, **MRR**, **Accuracy**.
 
 ---
 
-## Project Roadmap
+## MVP vs Extensions
 
-| Week | Planned Work |
-|---:|---|
-| 1 | Finalize scope, proposal, Weekly Progress Report 1, and initial backlog |
-| 2 | Create GitHub repo/project board, select dataset, define MVP, start cleaning |
-| 3 | Build dataset pipeline, baseline recommender, NLP prompts, chatbot flow, UI/API skeleton, and evaluation cases |
-| 4 | Feature engineering, TF-IDF/cosine recommender, NLP extraction, UI mock responses |
-| 5 | Compare recommender results, build preference extraction, implement chatbot flow, run bilingual feasibility spike |
-| 6 | Integrate recommender, NLP, and UI/API; complete evaluation plan |
-| 7 | Improve UI, recommendation explanations, feedback collection, and stability |
-| 8 | Run evaluation, refine recommender and preference extraction, fix major bugs |
-| 9 | Review scope and decide whether multilingual or face-login stretch goals are realistic |
-| 10 | Complete final functionality, bug fixes, deployment preparation, report outline |
-| 11 | Final test pass, technical report draft, presentation visuals |
-| 12 | Final report, presentation, code cleanup, README, and submission package |
+| MVP                                        | Extension if time allows  |
+| ------------------------------------------ | ------------------------- |
+| Streamlit UI with chatbox + sidebar        | React/Next.js + FastAPI   |
+| Free-text input + starter questions        | Persistent chat history   |
+| Domain-specific multilingual normalization | Broader language coverage |
+| TF-IDF + cosine similarity                 | Random Forest reranker    |
+| Feature-based explanations                 | User feedback loop        |
+| Precision/Recall/MRR evaluation            | NDCG, MAP                 |
 
 ---
 
-## Current Status
+## Technology Stack
 
-As of Weekly Progress Report 1, the project is in the early planning stage. The team has selected the movie recommendation chatbot as the main project direction, defined multilingual support and face-recognition login as stretch goals, and identified the next priorities:
-
-- Create the GitHub repository and project board
-- Select and document the movie dataset
-- Define MVP acceptance criteria
-- Assign Week 2 sprint issues
-- Begin dataset cleaning, NLP planning, evaluation planning, and prototype design
-
-Estimated completion at the end of Week 1: **5%**.
-
----
-
-## Collaboration Workflow
-
-The team will use GitHub to track development and weekly progress.
-
-Recommended workflow:
-
-1. Create a GitHub issue for each task.
-2. Assign an owner and sprint week.
-3. Use branches for feature work.
-4. Open pull requests for review.
-5. Link commits and pull requests to issues.
-6. Keep weekly evidence in the repository.
-7. Update progress reports and documentation after each sprint.
-
-Suggested issue labels:
-
-- `data`
-- `nlp`
-- `recommender`
-- `ui`
-- `evaluation`
-- `documentation`
-- `stretch-goal`
-- `bug`
-- `week-2`, `week-3`, etc.
+| Category        | Tools                                   |
+| --------------- | --------------------------------------- |
+| Language        | Python 3.10+                            |
+| ML / Data       | pandas, NumPy, scikit-learn, scipy      |
+| NLP             | TF-IDF, cosine similarity, spaCy, NLTK  |
+| API             | FastAPI, uvicorn, pydantic              |
+| UI              | Streamlit (MVP); React/Next.js optional |
+| Evaluation      | Custom precision/recall/MRR harness     |
+| Version Control | GitHub + GitHub Projects                |
 
 ---
 
 ## License
 
-This project is being developed for academic purposes as part of AML-2403 AI and ML Lab. A formal license can be added later if the team decides to make the repository public.
-
----
-
-## Acknowledgements
-
-This project is part of the AML-2403 AI and ML Lab capstone work for the Spring 2026 semester under the supervision of William Pourmajidi.
+Academic project — AML-2403 AI and ML Lab, Spring 2026, Lambton College.
