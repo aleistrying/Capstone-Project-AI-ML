@@ -37,7 +37,7 @@ def recommend_on_the_fly(query_text, movies_df, vectorizer, tfidf_matrix, state_
         return movies_df.iloc[related_indices].copy()
 
     # Select columns, handling missing release_year
-    cols = ['title', 'genres_list', 'vote_average', 'similarity_score', 'overview']
+    cols = ['movieId','title', 'genres_list', 'vote_average', 'similarity_score', 'overview']
     if 'release_year' in recommendations.columns:
         cols.insert(2, 'release_year')
 
