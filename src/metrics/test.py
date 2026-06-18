@@ -1,14 +1,6 @@
-from recommender_engine import recommend_on_the_fly
+# Then your import would work as:
 import sys
-import os
-sys.path.append(os.path.abspath(
-    '/Workspace/Users/carlos.graniel.manrique@gmail.com/Capstone-Project-AI-ML/src/nlp'))
-# sys.path.append(os.path.abspath(
-#    '/Workspace/Users/carlos.graniel.manrique@gmail.com/Capstone-Project-AI-ML/src/recommender'))
+sys.path.append('/Workspace/Users/carlos.graniel.manrique@gmail.com/Capstone-Project-AI-ML/notebooks')
+from API_Simulation import test_cineassist_pipeline
 
-
-preferences = extract_preferences(
-    "I'm in the mood for a funny comedy movie in english with high ratings")
-display(preferences)
-# recomm = recommend_on_the_fly(preferences)
-# display(
+#test=test_cineassist_pipeline()
