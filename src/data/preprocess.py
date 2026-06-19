@@ -11,13 +11,10 @@ Run:
 """
 
 import ast
-import re
-import string
 import sys
 from pathlib import Path
 
 import joblib
-import nltk
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 
@@ -29,11 +26,9 @@ MODELS = ROOT / "models"
 PROC.mkdir(parents=True, exist_ok=True)
 MODELS.mkdir(parents=True, exist_ok=True)
 
-# ── NLTK data ────────────────────────────────────────────────────────────────
-nltk.download("stopwords", quiet=True)
-nltk.download("punkt", quiet=True)
-STOPWORDS = set(nltk.corpus.stopwords.words("english"))
-stemmer = nltk.PorterStemmer()
+# Make `src` importable when run as a script (python src/data/preprocess.py)
+sys.path.insert(0, str(ROOT))
+from src.utils.text_cleaning import clean_text  # noqa: E402
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -77,15 +72,6 @@ def _extract_director(crew_raw):
     except Exception:
         pass
     return ""
-
-
-def clean_and_stem(text):
-    """Lowercase → remove punctuation → tokenize → remove stopwords → stem."""
-    text = str(text).lower()
-    text = "".join(c for c in text if c not in string.punctuation)
-    tokens = re.split(r"\W+", text)
-    tokens = [stemmer.stem(w) for w in tokens if w and w not in STOPWORDS]
-    return " ".join(tokens)
 
 
 # ── Step 1: Load raw files ────────────────────────────────────────────────────
@@ -177,11 +163,11 @@ movies_final["combined_features"] = (
     movies_final["release_date"].fillna("").astype(str)
 )
 
-# ── Step 7: NLP cleaning + stemming (mirrors notebook 03) ───────────────────
-print("Cleaning and stemming combined_features (this takes ~30s)...")
+# ── Step 7: NLP cleaning (shared with the query side — see src/utils/text_cleaning) ─
+print("Cleaning combined_features (this takes ~30s)...")
 
 movies_final["combined_features_stemmed"] = (
-    movies_final["combined_features"].apply(clean_and_stem)
+    movies_final["combined_features"].apply(clean_text)
 )
 
 # ── Step 8: TF-IDF vectorization ─────────────────────────────────────────────
@@ -189,7 +175,10 @@ print("Fitting TF-IDF vectorizer...")
 
 corpus = movies_final["combined_features_stemmed"].fillna("")
 
-tfidf_vectorizer = TfidfVectorizer(ngram_range=(1, 2), min_df=0.01, max_df=0.8)
+# min_df=2 (absolute count) keeps any term appearing in ≥2 movies, so titles,
+# cast names and niche keywords survive into the vocabulary. The old min_df=0.01
+# required a term in ≥1% of movies, which pruned the vocab to ~1k common words.
+tfidf_vectorizer = TfidfVectorizer(ngram_range=(1, 2), min_df=2, max_df=0.8)
 tfidf_matrix = tfidf_vectorizer.fit_transform(corpus)
 
 print(f"  TF-IDF matrix: {tfidf_matrix.shape}")

@@ -29,16 +29,19 @@ def chatbot_response(
     prefs = extract_preferences(user_input)
     state_dict.update(prefs)
 
-    if not state_dict.get("genres"):
+    # Build the query from any signal we have. free_text is the full user input,
+    # so detected genres/mood just reinforce those tokens — we no longer dead-end
+    # when no genre is recognized; we still run similarity on what was typed.
+    query_parts = (state_dict.get("genres") or []) + (state_dict.get("mood") or [])
+    query_parts.append(state_dict.get("free_text", ""))
+    query_text = " ".join(p for p in query_parts if p).strip()
+
+    if not query_text:
         return (
-            "Hi! To help you find something, what genre would you like? "
-            "(e.g. action, comedy, drama, thriller…)",
+            "Hi! Tell me what you're in the mood for — e.g. a funny space "
+            "adventure, a dark thriller from the 90s, something like Inception…",
             state_dict,
         )
-
-    query_parts = state_dict.get("genres", []) + (state_dict.get("mood") or [])
-    query_parts.append(state_dict.get("free_text", ""))
-    query_text = " ".join(p for p in query_parts if p)
 
     legacy_state = {
         "language": state_dict.get("language"),

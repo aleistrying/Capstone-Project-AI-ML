@@ -1,9 +1,13 @@
 from sklearn.metrics.pairwise import linear_kernel
 import pandas as pd
 
+from src.utils.text_cleaning import clean_text
+
 def recommend_on_the_fly(query_text, movies_df, vectorizer, tfidf_matrix, state_dict=None, top_n=5):
 
-    query_vector = vectorizer.transform([query_text])
+    # Clean the query exactly like the corpus was cleaned, otherwise the query
+    # tokens won't match the TF-IDF vocabulary and similarity collapses.
+    query_vector = vectorizer.transform([clean_text(query_text)])
 
     cosine_sim_scores = linear_kernel(query_vector, tfidf_matrix).flatten()
 

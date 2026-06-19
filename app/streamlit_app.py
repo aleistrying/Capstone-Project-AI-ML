@@ -91,6 +91,44 @@ with st.sidebar:
     )
     min_rating = st.slider("Minimum rating", 0.0, 10.0, 0.0, 0.5)
 
+    # -----------------------------------------------------------------------
+    # Model diagnostics — quick check that data and model line up
+    # -----------------------------------------------------------------------
+    with st.expander("🔧 Model diagnostics"):
+        n_movies = len(movies_df)
+        n_docs, n_terms = (tfidf_matrix.shape if tfidf_matrix is not None else (0, 0))
+        vocab_size = len(getattr(vectorizer, "vocabulary_", {}))
+
+        c1, c2 = st.columns(2)
+        c1.metric("Movies (rows)", f"{n_movies:,}")
+        c2.metric("Matrix rows", f"{n_docs:,}")
+        c1.metric("Matrix terms", f"{n_terms:,}")
+        c2.metric("Vocabulary", f"{vocab_size:,}")
+
+        if tfidf_matrix is not None and n_docs == n_movies:
+            st.success(f"Matrix rows match movies ({n_movies:,}) ✓")
+        else:
+            st.error(
+                f"Mismatch: matrix has {n_docs:,} rows but data has {n_movies:,}. "
+                "Rebuild with `python src/data/preprocess.py`."
+            )
+
+        _loaded = list(DATA_PATH.glob("*.csv"))
+        st.caption(f"Dataset: `{_loaded[0].name if _loaded else 'none'}`")
+
+        # Query inspector — see how text is cleaned and how many terms hit the vocab
+        probe = st.text_input("Inspect a query", "batman superhero gotham")
+        if probe:
+            from src.utils.text_cleaning import clean_text
+            cleaned = clean_text(probe)
+            vec_tokens = set(getattr(vectorizer, "vocabulary_", {}))
+            toks = cleaned.split()
+            hits = [t for t in toks if t in vec_tokens]
+            st.write(f"Cleaned → `{cleaned or '(empty)'}`")
+            st.write(f"Vocab hits: **{len(hits)}/{len(toks)}** → {hits or '—'}")
+            if toks and not hits:
+                st.warning("No query terms in vocabulary → similarity will be ~0.")
+
 # ---------------------------------------------------------------------------
 # Conversation state
 # ---------------------------------------------------------------------------
