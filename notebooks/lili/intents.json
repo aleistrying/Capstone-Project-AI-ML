@@ -29,9 +29,9 @@
                 "see you later",
                 "farewell",
                 "take care",
-                "Nice talking to you, goodbye!",
-                "Till next time! Goodbye!"
+                "Nice talking to you, goodbye!"
             ],
+            
             "responses":[
                 "Goodbye! Have a great day!",
                 "See you later! Take care!",
@@ -41,6 +41,14 @@
             ],
             "context_set":[
                 ""
+            ]
+        },
+        {
+            "tag":"departure",
+            "patterns":[],            
+            "responses":[
+                "The conversation has finished",
+                "Till next time! Goodbye!"
             ]
         },
         {
@@ -57,20 +65,6 @@
                 "You're welcome! Happy to help!",
                 "No problem! Let me know if you need anything else.",
                 "Anytime! I'm here to assist you."
-            ],
-            "context_set":[
-                ""
-            ]
-        },
-        {
-            "tag":"noanswer",
-            "patterns":[
-                ""
-            ],
-            "responses":[
-                "Sorry, I can't understand you.",
-                "Please give me more information.",
-                "Not sure I understand. Can you rephrase?"
             ],
             "context_set":[
                 ""
@@ -107,12 +101,25 @@
                 "I'd be happy to recommend a movie. What type of movies do you like?",
                 "Tell me a genre, actor, director, or keyword, and I'll find a movie for you!"
             ],
+            "ignored_words":[
+                "movie",
+                "movies",
+                "film",
+                "films",
+                "watch",
+                "recommend",
+                "recommendation",
+                "suggest",
+                "suggestions",
+                "want",
+                "see"
+            ],
             "context_set":[
                 ""
             ]
         },
         {
-            "tag":"genre",
+            "tag":"genre_search",
             "patterns":[
                 "action: fights, explosions, and high-energy scenes", 
                 "comedy: light-hearted and humorous", 
@@ -125,23 +132,21 @@
                 "documentary: informative and educational"
             ],
             "responses":[
-                "Great choice! Here are some {genre} movies you might enjoy: [list of movies].",
-                "I have some fantastic {genre} movie recommendations for you: [list of movies]."
+                "Searching movies in the {genre} genre..."
+                
             ],
             "context_set":[
                 ""
             ]
         },
         {
-            "tag":"movie_search",
-            "patterns":[
-                "I like Interstellar",
-                "movies similar to Titanic",
-                "recommend something like Avatar",
-                "find movies like Inception"
-            ],
-            "responses":[
-                "Tell me a movie you like."
+            "tag": "recommendation_response",
+            "patterns": [],
+            "responses": [
+                    "You might enjoy these movies:",
+                    "Based on your preferences, I recommend:",
+                    "Here are some movies you may like:",
+                    "These movies match your search:"
             ]
         }
     ]
