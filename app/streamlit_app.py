@@ -15,7 +15,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.chatbot.chatbot_flow import chatbot_response, initialize_conversation_state
+from src.chatbot.chatbot_flow import get_chat_recommendations, initialize_conversation_state
+from app.movie_cards import inject_css, render_recommendations
 
 # ---------------------------------------------------------------------------
 # Asset loading (cached across reruns)
@@ -62,34 +63,18 @@ movies_df, vectorizer, tfidf_matrix = load_assets()
 # ---------------------------------------------------------------------------
 
 st.set_page_config(page_title="CineAssist", page_icon="🎬", layout="centered")
+inject_css()
 st.title("🎬 CineAssist")
 st.caption("Describe what you want to watch and get personalized movie recommendations.")
 
 # ---------------------------------------------------------------------------
-# Optional starter questions (sidebar)
+# Sidebar — CineAssist is chat-first, so the sidebar only holds developer tools.
+# (The old "Quick filters" were removed: they had no effect because the chat
+# pipeline re-derives all preferences from the typed message each turn.)
 # ---------------------------------------------------------------------------
 
 with st.sidebar:
-    st.header("Quick filters (optional)")
-    st.caption("Fill in any or all — or just describe your mood in the chat.")
-    starter_genre = st.selectbox(
-        "Genre",
-        ["", "Action", "Comedy", "Drama", "Horror", "Romance",
-         "Sci-Fi", "Thriller", "Animation", "Fantasy", "Family"],
-    )
-    starter_mood = st.selectbox(
-        "Mood",
-        ["", "Feel-good", "Dark", "Intense", "Relaxing", "Nostalgic", "Romantic"],
-    )
-    starter_decade = st.selectbox(
-        "Decade",
-        ["", "1970s", "1980s", "1990s", "2000s", "2010s", "2020s"],
-    )
-    starter_lang = st.selectbox(
-        "Original language",
-        ["", "English", "Spanish", "French", "Italian", "Japanese", "Korean"],
-    )
-    min_rating = st.slider("Minimum rating", 0.0, 10.0, 0.0, 0.5)
+    st.header("Developer tools")
 
     # -----------------------------------------------------------------------
     # Model diagnostics — quick check that data and model line up
@@ -138,40 +123,48 @@ if "messages" not in st.session_state:
 if "chat_state" not in st.session_state:
     st.session_state.chat_state = initialize_conversation_state()
 
+def _render_message(message: dict) -> None:
+    """Render one stored turn: rich cards for assistant recs, markdown otherwise."""
+    if message.get("recommendations") is not None:
+        render_recommendations(
+            message.get("intro", ""),
+            message["recommendations"],
+            message.get("meta"),
+        )
+    else:
+        st.markdown(message.get("content", ""))
+
+
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+        _render_message(message)
 
 # ---------------------------------------------------------------------------
 # Chat input
 # ---------------------------------------------------------------------------
 
 if prompt := st.chat_input("e.g. I want a funny family movie from the 90s"):
-    # Inject starter answers into the state before the turn
     state = st.session_state.chat_state
-    if starter_genre:
-        state["genres"] = state.get("genres") or [starter_genre.lower()]
-    if starter_mood:
-        state["mood"] = state.get("mood") or [starter_mood.lower()]
-    if starter_decade:
-        decade_start = int(starter_decade[:4])
-        state["year_range"] = state.get("year_range") or [decade_start, decade_start + 9]
-    if starter_lang:
-        state["language"] = state.get("language") or starter_lang[:2].lower()
-    if min_rating > 0:
-        state["min_rating"] = state.get("min_rating") or min_rating
 
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        response_text, updated_state = chatbot_response(
+        intro, recs, updated_state, meta = get_chat_recommendations(
             prompt, state, movies_df, vectorizer, tfidf_matrix
         )
-        st.markdown(response_text)
+        render_recommendations(intro, recs, meta)
 
-    st.session_state.messages.append({"role": "assistant", "content": response_text})
+    st.session_state.messages.append(
+        {
+            "role": "assistant",
+            "intro": intro,
+            "recommendations": recs,
+            "meta": meta,
+            "content": intro,  # fallback text if recommendations is empty
+        }
+    )
     st.session_state.chat_state = updated_state
 
 # ---------------------------------------------------------------------------
