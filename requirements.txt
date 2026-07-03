@@ -20,3 +20,17 @@ streamlit
 # Utilities
 rapidfuzz
 requests
+
+# Translation (Brayan — multilingual support module)
+# These packages enable full sentence translation using offline HuggingFace models.
+# No API key needed. Models are downloaded automatically on first use (~300 MB each).
+transformers>=4.30.0   # MarianMT model architecture from HuggingFace
+torch                  # Deep learning backend for running the models
+sentencepiece          # Tokenizer required by MarianMT
+langdetect             # Statistical language identification (Google's langdetect)
+datasets               # HuggingFace Datasets — used only for fine-tuning (fine_tune.py)
+evaluate               # HuggingFace Evaluate — BLEU metric for fine-tuning
+sacrebleu              # Standard BLEU scorer used by evaluate
+
+# Testing
+pytest
