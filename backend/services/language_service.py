@@ -8,9 +8,7 @@ general-purpose translator — scope is movie-domain terms only.
 
 import re
 
-# ---------------------------------------------------------------------------
-# Language detection: stopword-based heuristic (no external dependency)
-# ---------------------------------------------------------------------------
+# Language detection: stopword-based heuristic
 
 _STOPWORDS = {
     "es": {"quiero", "una", "un", "de", "que", "me", "para", "con", "por", "los", "las",
@@ -31,10 +29,7 @@ def detect_language(text: str) -> str:
     return best_lang if best_score >= 2 else "en"
 
 
-# ---------------------------------------------------------------------------
 # Domain synonym dictionaries: maps multilingual terms → canonical English
-# ---------------------------------------------------------------------------
-
 _GENRE_SYNONYMS: dict[str, list[str]] = {
     "comedy":    ["comedy", "comedia", "chistosa", "graciosa", "graciosa", "comédie",
                   "funny", "humor", "humorística", "humour"],
@@ -169,7 +164,8 @@ def normalize(raw_text: str) -> dict:
         if mapped_year_range and mapped_year_range[0] != mapped_year_range[1]
         else (f"from {mapped_year_range[0]}" if mapped_year_range else "")
     )
-    normalized_text = " ".join(p for p in [genre_part, mood_part, year_part, raw_text] if p)
+    normalized_text = " ".join(
+        p for p in [genre_part, mood_part, year_part, raw_text] if p)
 
     return {
         "detected_language": detected_lang,
