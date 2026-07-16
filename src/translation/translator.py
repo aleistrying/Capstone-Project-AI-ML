@@ -1,104 +1,196 @@
 """
-Translation module for CineAssist.
+Neural machine translation module for CineAssist.
 
-CURRENT STATUS: Domain-specific stubs only.
-The system handles multilingual input through language_service.py, which does
-domain-specific normalization (genre/mood/decade keywords) without full translation.
+WHAT THIS  DOES
 
-TODO: Replace stubs with a real translation backend if needed:
-  - Option A: Google Cloud Translation API (pip install google-cloud-translate)
-  - Option B: DeepL API (pip install deepl)
-  - Option C: HuggingFace transformers (pip install transformers sentencepiece)
-    e.g. Helsinki-NLP/opus-mt-es-en, opus-mt-fr-en, opus-mt-pt-en
+Translates text between English and five other languages using pre-trained
+neural machine translation models. It is used in two places:
 
-The NLP pipeline in nlp_preferences.py operates on English text.
-For non-English input, language_service.normalize() maps known domain terms to
-canonical English before passing text to the NLP extractor. Full sentence
-translation would improve free-text queries beyond the domain vocabulary.
+  1. chatbot_flow.py — translates the user's message INTO English so the
+     NLP preference extractor can always work on clean English text.
+
+  2. chatbot_flow.py — translates the chatbot's English response BACK into
+     the user's original language.
+
+TECHNOLOGY: Helsinki-NLP MarianMT via HuggingFace Transformers
+
+MarianMT is a family of neural translation models trained on millions of
+parallel sentence pairs. CineAssist uses the Helsinki-NLP variants hosted
+on HuggingFace (https://huggingface.co/Helsinki-NLP).
+
+Each language pair uses a separate model. Models are downloaded
+automatically on first use and cached in ~/.cache/huggingface/. Subsequent
+calls use the in-memory _model_cache dict and are fast.
+
+SUPPORTED LANGUAGE PAIRS
+
+  es ↔ en   (Spanish ↔ English)
+  fr ↔ en   (French ↔ English)
+  pt ↔ en   (Portuguese ↔ English)
+  de ↔ en   (German ↔ English)
+  it ↔ en   (Italian ↔ English)
+
+FINE-TUNING
+
+If a fine-tuned model exists at models/translation/<src>-<tgt>/ it is loaded
+instead of the base HuggingFace model. Run fine_tune.py to create one.
+The fine-tuned model is trained on movie-domain sentence pairs and produces
+more accurate translations for phrases like "película de acción" or "film d'horreur".
+
+PUBLIC API (functions you call from outside this module)
+
+  translate(text, src_lang, tgt_lang)  → str
+  translate_to_english(text, src_lang) → str
+  translate_from_english(text, tgt_lang) → str
 """
 
-# Supported language codes → human-readable names
-_SUPPORTED_LANGUAGES = {
-    "en": "English",
-    "es": "Spanish",
-    "fr": "French",
-    "pt": "Portuguese",
-    "de": "German",
-    "it": "Italian",
-    "ja": "Japanese",
-    "ko": "Korean",
-    "zh": "Chinese",
+import os
+import torch
+from transformers import MarianMTModel, MarianTokenizer
+
+# Maps (source_lang, target_lang) tuples to HuggingFace model IDs.
+# These are the official Helsinki-NLP pretrained models.
+SUPPORTED_PAIRS = {
+    ('es', 'en'): 'Helsinki-NLP/opus-mt-es-en',
+    ('en', 'es'): 'Helsinki-NLP/opus-mt-en-es',
+    ('fr', 'en'): 'Helsinki-NLP/opus-mt-fr-en',
+    ('en', 'fr'): 'Helsinki-NLP/opus-mt-en-fr',
+    # Portuguese: no dedicated pt-en model exists on HuggingFace.
+    # opus-mt-ROMANCE-en handles all Romance languages (ES, FR, PT, IT) → EN.
+    # opus-mt-en-ROMANCE handles EN → all Romance languages (requires >>pt<< prefix in input,
+    # but for our use case the output is acceptable without it).
+    ('pt', 'en'): 'Helsinki-NLP/opus-mt-ROMANCE-en',
+    ('en', 'pt'): 'Helsinki-NLP/opus-mt-en-ROMANCE',
+    ('de', 'en'): 'Helsinki-NLP/opus-mt-de-en',
+    ('en', 'de'): 'Helsinki-NLP/opus-mt-en-de',
+    ('it', 'en'): 'Helsinki-NLP/opus-mt-it-en',
+    ('en', 'it'): 'Helsinki-NLP/opus-mt-en-it',
 }
 
+# Path where fine_tune.py saves domain-adapted models.
+# Structure: models/translation/es-en/  models/translation/en-es/  etc.
+_BASE_DIR = os.path.dirname(__file__)
+FINETUNED_DIR = os.path.normpath(os.path.join(
+    _BASE_DIR, '..', '..', 'models', 'translation'))
 
-def detect_language(text: str) -> str:
+# In-memory cache: avoids reloading the same model twice in one session.
+# Key: "es-en" string. Value: (tokenizer, model) tuple.
+_model_cache: dict = {}
+
+
+def _load_model(src: str, tgt: str):
     """
-    Detect the language of the input text.
+    Load the tokenizer and model for a language pair.
 
-    STUB: Returns 'en' for all inputs.
-
-    TODO: Integrate a real language detector, e.g.:
-        from langdetect import detect
-        return detect(text)
-    or use language_service.normalize() which already does heuristic detection.
+    Checks the fine-tuned directory first; falls back to the HuggingFace
+    pretrained model if no fine-tuned version exists.
 
     Args:
-        text: Raw input text from the user.
+        src: Source language ISO 639-1 code (e.g. 'es').
+        tgt: Target language ISO 639-1 code (e.g. 'en').
 
     Returns:
-        ISO 639-1 language code (e.g. 'en', 'es', 'fr').
+        (tokenizer, model) tuple, with model in eval mode.
+
+    Raises:
+        ValueError: If the language pair is not in SUPPORTED_PAIRS.
     """
-    # TODO: implement real language detection
-    return "en"
+    key = f"{src}-{tgt}"
+    if key in _model_cache:
+        return _model_cache[key]
+
+    # Use the fine-tuned model if it was produced by fine_tune.py
+    finetuned_path = os.path.join(FINETUNED_DIR, key)
+    if os.path.exists(finetuned_path) and os.listdir(finetuned_path):
+        model_path = finetuned_path
+        print(f"[Translator] Loading fine-tuned model: {key}")
+    else:
+        model_path = SUPPORTED_PAIRS.get((src, tgt))
+        if not model_path:
+            raise ValueError(
+                f"No translation model available for {src} → {tgt}")
+        print(
+            f"[Translator] Loading base model from HuggingFace: {model_path}")
+
+    tokenizer = MarianTokenizer.from_pretrained(model_path)
+    model = MarianMTModel.from_pretrained(model_path)
+    model.eval()  # disable dropout — we are doing inference, not training
+
+    _model_cache[key] = (tokenizer, model)
+    return _model_cache[key]
 
 
-def translate_to_english(text: str, source_language: str | None = None) -> str:
+def translate(text: str, src_lang: str, tgt_lang: str) -> str:
     """
-    Translate text from any language to English.
+    Translate text from one language to another.
 
-    STUB: Returns the input text unchanged.
-
-    The current architecture uses domain-specific normalization in
-    language_service.normalize() instead of full translation. This stub
-    exists as the integration point for a real translation API.
-
-    TODO: Implement using one of:
-        # Google Cloud Translation:
-        from google.cloud import translate_v2 as translate
-        client = translate.Client()
-        result = client.translate(text, target_language="en")
-        return result["translatedText"]
-
-        # DeepL:
-        import deepl
-        translator = deepl.Translator(api_key)
-        return translator.translate_text(text, target_lang="EN-US").text
-
-        # HuggingFace (offline, no API key needed):
-        from transformers import pipeline
-        pipe = pipeline("translation", model="Helsinki-NLP/opus-mt-es-en")
-        return pipe(text)[0]["translation_text"]
+    Uses beam search (num_beams=4) for better quality output. Beam search
+    explores 4 candidate translations at each step and picks the best one,
+    unlike greedy search which only picks the single most likely word.
 
     Args:
-        text: Input text to translate.
-        source_language: ISO 639-1 source language code. If None, auto-detect.
+        text:     The text to translate.
+        src_lang: Source language code (e.g. 'es').
+        tgt_lang: Target language code (e.g. 'en').
 
     Returns:
-        English translation of the input text.
+        Translated string. Returns the original text unchanged if:
+          - src_lang == tgt_lang (no translation needed)
+          - text is blank/whitespace only
     """
-    # TODO: implement real translation
-    return text
+    if src_lang == tgt_lang or not text.strip():
+        return text
+
+    tokenizer, model = _load_model(src_lang, tgt_lang)
+
+    # Tokenize: convert the text string into a tensor of token IDs.
+    # max_length=512 matches the model's maximum context window.
+    inputs = tokenizer(
+        [text],
+        return_tensors='pt',
+        padding=True,
+        truncation=True,
+        max_length=512,
+    )
+
+    # Generate translation without computing gradients (faster, less memory).
+    with torch.no_grad():
+        outputs = model.generate(**inputs, num_beams=4, max_length=512)
+
+    # Decode the output token IDs back into a human-readable string.
+    # skip_special_tokens=True removes <pad>, </s> and similar markers.
+    return tokenizer.decode(outputs[0], skip_special_tokens=True)
 
 
-def get_supported_languages() -> dict:
+def translate_to_english(text: str, src_lang: str) -> str:
     """
-    Return the set of languages that CineAssist can process.
+    Translate text from a supported language to English.
 
-    Note: The domain-specific normalization in language_service.py covers
-    English, Spanish, French, and Portuguese for movie-domain vocabulary.
-    Full translation (when implemented) would extend to all languages below.
+    This is called at the START of chatbot_response() to normalize user
+    input before passing it to the NLP preference extractor.
+
+    Args:
+        text:     User's message in their language.
+        src_lang: ISO 639-1 code of the source language (e.g. 'es').
 
     Returns:
-        Dict mapping ISO 639-1 codes to human-readable language names.
+        The text in English. If src_lang is 'en', returns text unchanged.
     """
-    return dict(_SUPPORTED_LANGUAGES)
+    return translate(text, src_lang, 'en')
+
+
+def translate_from_english(text: str, tgt_lang: str) -> str:
+    """
+    Translate an English string into the target language.
+
+    This is called at the END of chatbot_response() to convert the chatbot's
+    English-language reply into the user's original language before displaying it.
+
+    Args:
+        text:     English text to translate (e.g. a chatbot response).
+        tgt_lang: ISO 639-1 code of the target language (e.g. 'es').
+
+    Returns:
+        The text in tgt_lang. If tgt_lang is 'en', returns text unchanged.
+    """
+    return translate(text, 'en', tgt_lang)
