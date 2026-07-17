@@ -1,24 +1,31 @@
 """
 CineAssist — NLP Pipeline Inspector
 
-Shows each stage of the NLP extraction pipeline for any input text:
-  1. Language detection + domain normalization  (language_service)
-  2. Preference extraction                       (nlp_service → nlp_preferences)
-  3. Translation status                          (translation_service — stub)
+Traces any input text through the EXACT pipeline the live chat app runs, stage
+by stage, using the centralized `run_pipeline()` in
+`src/chatbot/chatbot_flow.py`. There is no duplicated logic here: whatever the
+recommender does, this page shows — real translation, the query fed to TF-IDF,
+the filters applied, and the resulting cosine-similarity recommendations.
 
-This page documents WHERE entity extraction happens and exposes it
-for debugging / demos.
+  0. Language detection + translation  (langdetect + MarianMT, real)
+  1. Domain normalization              (language_service)
+  2. Preference extraction             (nlp_preferences)
+  3. Query building                    (keyword_extractor → text fed to TF-IDF)
+  4. Filters                           (language / year / min-rating)
+  5. Cosine similarity recommendations (recommender_engine)
 """
 
 import sys
 from pathlib import Path
 
+import joblib
+import pandas as pd
 import streamlit as st
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from backend.services import language_service, nlp_service, translation_service
+from src.chatbot.chatbot_flow import run_pipeline, initialize_conversation_state
 
 st.set_page_config(
     page_title="CineAssist — NLP Inspector",
@@ -27,170 +34,283 @@ st.set_page_config(
 )
 st.title("🔍 NLP Pipeline Inspector")
 st.caption(
-    "Trace any input text through the full NLP pipeline: "
-    "language detection → domain normalization → preference extraction."
+    "Trace any input through the exact pipeline the chat app runs: "
+    "language detection → translation → normalization → preference extraction → "
+    "query building → TF-IDF cosine similarity → recommendations."
 )
 
 # ---------------------------------------------------------------------------
-# Sample queries
+# Assets — same models/data the live app and Metrics page use
+# ---------------------------------------------------------------------------
+
+DATA_PATH   = PROJECT_ROOT / "data" / "processed"
+MODELS_PATH = PROJECT_ROOT / "models"
+
+
+@st.cache_resource(show_spinner="Loading models & dataset…")
+def load_assets():
+    csv_files = list(DATA_PATH.glob("*.csv"))
+    if not csv_files:
+        return None, None, None
+    movies_df = pd.read_csv(csv_files[0])
+
+    vec_path = MODELS_PATH / "tfidf_vectorizer.pkl"
+    if not vec_path.exists():
+        return movies_df, None, None
+    vectorizer = joblib.load(vec_path)
+
+    npz_path = MODELS_PATH / "tfidf_matrix.npz"
+    mat_path = MODELS_PATH / "tfidf_matrix.pkl"
+    if npz_path.exists():
+        from scipy.sparse import load_npz
+        tfidf_matrix = load_npz(str(npz_path))
+    elif mat_path.exists():
+        tfidf_matrix = joblib.load(mat_path)
+    else:
+        tfidf_matrix = None
+
+    return movies_df, vectorizer, tfidf_matrix
+
+
+movies_df, vectorizer, tfidf_matrix = load_assets()
+assets_ready = movies_df is not None and vectorizer is not None and tfidf_matrix is not None
+
+if not assets_ready:
+    st.error(
+        "Models or dataset not found. Build them first:\n\n"
+        "```bash\npython src/data/preprocess.py\n```"
+    )
+    st.stop()
+
+# ---------------------------------------------------------------------------
+# Sample queries + sidebar reference
 # ---------------------------------------------------------------------------
 
 SAMPLES = {
     "(type your own)": "",
-    "English — action with explosions": "I want an action movie with lots of fights and explosions from the 90s",
+    "English — action 90s": "I want an action movie with lots of fights and explosions from the 90s",
     "Spanish — comedy family 2000s": "quiero una pelicula chistosa para familia de los 2000",
     "Spanish — terror 80s": "busco algo de terror o suspenso de los 80",
     "French — romance": "je cherche un film romantique avec de l'humour",
     "Portuguese — animation": "um filme de animação para crianças muito legal",
-    "Mixed — sci-fi with year": "I want sci-fi movies from 2010s, películas de ciencia ficción",
-    "Min rating constraint": "show me movies with rating above 7.5 action thriller",
+    "Similar-to query": "something like Inception",
+    "Min rating constraint": "show me action thriller movies with rating above 7.5",
 }
 
 with st.sidebar:
     st.subheader("Sample Queries")
     selected = st.selectbox("Load a sample", list(SAMPLES.keys()))
     st.divider()
-    st.caption("NLP Pipeline Order")
+    st.caption("Pipeline (single source of truth)")
     st.markdown("""
-1. **translation_service** *(stub)*
-   Full sentence translation — not yet implemented.
-   Planned: Google Translate / DeepL / HuggingFace.
+`src/chatbot/chatbot_flow.py → run_pipeline()`
 
-2. **language_service.normalize()**
-   Detects language via stopword heuristics.
-   Maps domain vocabulary to canonical English
-   (genre, mood, decade, language synonyms).
-
-3. **nlp_service.extract()**
-   Wraps `src/nlp/nlp_preferences.py`.
-   Regex + keyword matching on the normalized text.
-   Returns: `genres`, `mood`, `year_range`, `language`,
-   `min_rating`, `similar_to`, `free_text`.
+0. **Translation** — `langdetect` + Helsinki-NLP MarianMT.
+   English input is passed through unchanged.
+1. **Domain normalization** — `language_service`.
+   Maps genre/mood/decade synonyms to canonical English.
+2. **Preference extraction** — `nlp_preferences`.
+   Regex + keyword matching → structured prefs.
+3. **Query building** — `keyword_extractor`.
+   The focused text that TF-IDF cosine runs against.
+4. **Filters** — language / year / min-rating.
+5. **Recommendation** — `recommender_engine`.
+   TF-IDF cosine + soft-decade ranking.
 """)
-
-# ---------------------------------------------------------------------------
-# Input
-# ---------------------------------------------------------------------------
+    st.caption("For aggregate P@5 / Recall / MRR see the **Metrics** page.")
 
 default_text = SAMPLES[selected]
 user_input = st.text_area(
     "Input text",
     value=default_text,
-    height=80,
+    height=90,
     placeholder="Type a movie request in any language…",
 )
 
 run = st.button("Analyze", type="primary", disabled=not user_input.strip())
 
-if run and user_input.strip():
-    # ── Stage 0: Translation (stub) ──────────────────────────────────────────
-    with st.expander("Stage 0 — Translation (stub)", expanded=True):
-        trans = translation_service.translate(user_input)
-        col1, col2, col3 = st.columns([2, 1, 1])
-        col1.write("**Input text**")
-        col1.code(trans["original_text"])
-        col2.metric("Detected language (stub)", trans["detected_language"])
-        col3.metric("Was translated", str(trans["was_translated"]))
-        st.warning(
-            "Translation is a stub — `translate_to_english()` currently returns input unchanged. "
-            "See `src/translation/translator.py` for the TODO integration points."
+if not run:
+    st.info("Enter a query above and click **Analyze** to trace it through the full pipeline.")
+    st.stop()
+
+# ---------------------------------------------------------------------------
+# Run the ONE centralized pipeline
+# ---------------------------------------------------------------------------
+
+with st.spinner("Running pipeline (first non-English query downloads a translation model)…"):
+    trace = run_pipeline(
+        user_input,
+        initialize_conversation_state(),
+        movies_df,
+        vectorizer,
+        tfidf_matrix,
+    )
+
+# ── Top-line summary metrics ────────────────────────────────────────────────
+st.subheader("Summary")
+m1, m2, m3, m4, m5 = st.columns(5)
+m1.metric("Detected language", trace.ui_language)
+m2.metric("Translated?", "Yes" if trace.was_translated else "No")
+m3.metric("Query terms in vocab", f"{len(trace.vocab_hits)}/{trace.vocab_total}")
+m4.metric("Top match score", f"{trace.max_similarity:.4f}")
+m5.metric("Results", len(trace.recommendations))
+
+if trace.status == "empty_query":
+    st.warning(
+        "No usable query terms were extracted — the app would reply with a "
+        "greeting/prompt instead of running the recommender."
+    )
+elif trace.status == "no_matches":
+    st.warning("The filters removed every candidate and no fallback matched.")
+
+# ── Stage 0: Translation (real) ─────────────────────────────────────────────
+with st.expander("Stage 0 — Language detection & translation", expanded=True):
+    if not trace.translation_available:
+        st.info(
+            "Neural translation deps (torch / transformers / langdetect) are not "
+            "installed in this environment, so the pipeline ran in English-only "
+            "mode. Language was detected with the stopword heuristic in "
+            "`language_service`. Install `requirements.txt` to enable MarianMT."
         )
-
-    # ── Stage 1: Language service ────────────────────────────────────────────
-    with st.expander("Stage 1 — Language detection + domain normalization", expanded=True):
-        lang_result = language_service.normalize(user_input)
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Detected language", lang_result.get("detected_language", "—"))
-            st.write("**Normalized text**")
-            st.code(lang_result.get("normalized_text", ""))
-        with col2:
-            st.write("**Mapped entities**")
-            mapped = {
-                "genres":     lang_result.get("mapped_genres", []),
-                "moods":      lang_result.get("mapped_moods", []),
-                "year_range": lang_result.get("mapped_year_range"),
-                "language":   lang_result.get("mapped_language"),
-            }
-            st.json(mapped)
-
-    # ── Stage 2: NLP service ─────────────────────────────────────────────────
-    with st.expander("Stage 2 — Preference extraction (NLP)", expanded=True):
-        prefs = nlp_service.extract(lang_result.get("normalized_text", user_input))
-        col1, col2 = st.columns(2)
-        with col1:
-            st.write("**Extracted preferences**")
-            st.json(prefs)
-        with col2:
-            st.write("**Extraction notes**")
-            notes = []
-            if prefs.get("genres"):
-                notes.append(f"Genres found: {prefs['genres']}")
-            if prefs.get("mood"):
-                notes.append(f"Mood: {prefs['mood']}")
-            if prefs.get("year_range"):
-                yr = prefs["year_range"]
-                notes.append(f"Year range: {yr[0]}–{yr[1]}" if isinstance(yr, (list, tuple)) and len(yr) == 2 else f"Year: {yr}")
-            if prefs.get("language"):
-                notes.append(f"Language filter: {prefs['language']}")
-            if prefs.get("min_rating"):
-                notes.append(f"Min rating: {prefs['min_rating']}")
-            if prefs.get("similar_to"):
-                notes.append(f"Similar to: {prefs['similar_to']}")
-            if not notes:
-                notes.append("No structured preferences extracted — will use free-text TF-IDF query.")
-            for note in notes:
-                st.markdown(f"- {note}")
-
-    # ── Stage 3: Merged pipeline view ────────────────────────────────────────
-    with st.expander("Stage 3 — Merged preference object (backend/main.py)", expanded=False):
-        merged_genres = list(dict.fromkeys(
-            (prefs.get("genres") or []) + (lang_result.get("mapped_genres") or [])
-        ))
-        merged_moods = list(dict.fromkeys(
-            (prefs.get("mood") or []) + (lang_result.get("mapped_moods") or [])
-        ))
-        lang_yr = lang_result.get("mapped_year_range")
-        nlp_yr  = prefs.get("year_range")
-        if lang_yr and (not nlp_yr or (
-            isinstance(lang_yr, (list, tuple)) and
-            isinstance(nlp_yr, (list, tuple)) and
-            lang_yr[0] != lang_yr[1] and
-            nlp_yr[0] == nlp_yr[1]
-        )):
-            final_yr = lang_yr
-            yr_source = "language_service (decade range preferred over exact-year match)"
+    col1, col2 = st.columns(2)
+    with col1:
+        st.write("**Original input**")
+        st.code(trace.raw_input)
+        st.caption(f"Stopword-detected language (language_service): `{trace.domain.get('detected_language', '—')}`")
+    with col2:
+        st.write("**English input (fed to NLP)**")
+        st.code(trace.english_input)
+        if trace.was_translated:
+            st.success(f"Translated `{trace.ui_language}` → `en` via MarianMT.")
+        elif trace.ui_language == "en":
+            st.caption("Input already English — translation skipped (no-op).")
         else:
-            final_yr = nlp_yr
-            yr_source = "nlp_service"
+            st.caption(f"Detected `{trace.ui_language}` but text returned unchanged.")
 
-        merged = {
-            "genres":      merged_genres,
-            "mood":        merged_moods,
-            "year_range":  final_yr,
-            "year_source": yr_source,
-            "language":    prefs.get("language") or lang_result.get("mapped_language"),
-            "min_rating":  prefs.get("min_rating"),
-            "similar_to":  prefs.get("similar_to"),
-            "free_text":   prefs.get("free_text", ""),
-        }
-        st.json(merged)
-        st.caption(
-            "This is the object passed to `recommender_service.recommend()`. "
-            "Year range source shows which stage won when both extracted a year."
-        )
+# ── Stage 1: Domain normalization ───────────────────────────────────────────
+with st.expander("Stage 1 — Domain normalization (language_service)", expanded=True):
+    st.write("**Mapped entities** (multilingual synonym → canonical English)")
+    st.json({
+        "genres":     trace.domain.get("mapped_genres", []),
+        "moods":      trace.domain.get("mapped_moods", []),
+        "year_range": trace.domain.get("mapped_year_range"),
+        "language":   trace.domain.get("mapped_language"),
+    })
+    st.caption(
+        "These backfill any preference the extractor missed on the English text "
+        "(e.g. genre words that only appeared in the original language)."
+    )
 
-    # ── Architecture callout ─────────────────────────────────────────────────
-    st.divider()
-    st.subheader("Where NLP entity extraction happens")
+# ── Stage 2: Preference extraction ──────────────────────────────────────────
+with st.expander("Stage 2 — Preference extraction (nlp_preferences)", expanded=True):
+    col1, col2 = st.columns(2)
+    with col1:
+        st.write("**Structured preferences**")
+        st.json(trace.prefs)
+    with col2:
+        st.write("**Notes**")
+        notes = []
+        if trace.prefs.get("genres"):
+            notes.append(f"Genres: {trace.prefs['genres']}")
+        if trace.prefs.get("mood"):
+            notes.append(f"Mood: {trace.prefs['mood']}")
+        yr = trace.prefs.get("year_range")
+        if yr:
+            notes.append(f"Year range: {yr[0]}–{yr[1]}" if isinstance(yr, (list, tuple)) and len(yr) == 2 else f"Year: {yr}")
+        if trace.prefs.get("language"):
+            notes.append(f"Movie-language filter: {trace.prefs['language']}")
+        if trace.prefs.get("min_rating"):
+            notes.append(f"Min rating: {trace.prefs['min_rating']}")
+        if trace.prefs.get("similar_to"):
+            notes.append(f"Similar to: {trace.prefs['similar_to']}")
+        if not notes:
+            notes.append("No structured filters — relies on the free-text query.")
+        for n in notes:
+            st.markdown(f"- {n}")
+
+# ── Stage 3: Query building (what cosine runs against) ──────────────────────
+with st.expander("Stage 3 — Query building (what TF-IDF cosine runs against)", expanded=True):
+    col1, col2 = st.columns(2)
+    with col1:
+        st.write("**Focused query** (genres + mood + extracted keywords)")
+        st.code(trace.query_text or "(empty)")
+        st.write("**Cleaned query** (same cleaning as the movie corpus)")
+        st.code(trace.cleaned_query or "(empty)")
+    with col2:
+        st.write("**Vocabulary coverage**")
+        st.metric("Terms matching the TF-IDF vocabulary", f"{len(trace.vocab_hits)}/{trace.vocab_total}")
+        st.write(trace.vocab_hits or "—")
+        if trace.vocab_total and not trace.vocab_hits:
+            st.error("No query term is in the vocabulary → every cosine score will be ~0.")
+    st.caption(
+        "Cosine similarity is computed between this cleaned query vector and each "
+        "movie's TF-IDF vector. Only terms present in the vocabulary contribute — "
+        "this is why coverage matters."
+    )
+    with st.popover("Keyword-extractor detail"):
+        st.json(trace.keyword_extraction)
+
+# ── Stage 4: Filters ─────────────────────────────────────────────────────────
+with st.expander("Stage 4 — Filters applied inside the recommender", expanded=True):
+    st.write("**Filter state passed to `recommend_on_the_fly()`**")
+    st.json(trace.filters)
     st.markdown("""
-| Stage | File | What it extracts |
-|-------|------|-----------------|
-| Language detection | `backend/services/language_service.py` | Language (EN/ES/FR/PT), genre synonyms, mood synonyms, decade expressions |
-| NLP extraction | `src/nlp/nlp_preferences.py` | Genres, moods, year range, min rating, similar_to, free_text via regex + keyword lists |
-| Translation *(stub)* | `src/translation/translator.py` | Full sentence translation — not yet implemented |
-| Merge + priority | `backend/main.py` | Combines both, resolves conflicts (e.g. decade range vs exact year) |
+- **language** → hard filter on `original_language` (rows in other languages are dropped).
+- **year** → `year_mode="soft"`: not a hard cut. Movies inside the decade keep full
+  cosine; films outside are multiplied by a decade-distance decay, so a strong 1999
+  match still surfaces for a "90s" query.
+- **rating** → hard filter: `vote_average ≥ min_rating`.
+
+If every candidate is filtered out, the engine falls back to the closest matches by
+raw cosine so the UI is never empty.
     """)
 
-elif not run:
-    st.info("Enter a query above and click **Analyze** to trace it through the NLP pipeline.")
+# ── Stage 5: Cosine similarity recommendations ──────────────────────────────
+with st.expander("Stage 5 — Cosine similarity recommendations", expanded=True):
+    if trace.recommendations:
+        rec_rows = [
+            {
+                "#": i + 1,
+                "Title": r["title"],
+                "Year": r["year"],
+                "Rating": r["rating"],
+                "Match score": round(r["similarity"], 4),
+                "Genres": ", ".join(r["genres"][:3]),
+            }
+            for i, r in enumerate(trace.recommendations)
+        ]
+        st.dataframe(pd.DataFrame(rec_rows), use_container_width=True, hide_index=True)
+
+        st.bar_chart(
+            pd.DataFrame(rec_rows).set_index("Title")[["Match score"]],
+            horizontal=True,
+        )
+
+        if trace.broadened:
+            st.warning(
+                f"Top score {trace.max_similarity:.4f} is below the confidence "
+                "threshold (0.02) — the app labels these as broadened/low-confidence."
+            )
+
+        st.write("**Why these? (English explanations)**")
+        for r in trace.recommendations:
+            st.markdown(f"- **{r['title']}** — {r['explanation']}")
+    else:
+        st.info("No recommendations produced for this query.")
+
+# ---------------------------------------------------------------------------
+# Architecture callout
+# ---------------------------------------------------------------------------
+
+st.divider()
+st.subheader("Where each stage lives (single centralized pipeline)")
+st.markdown("""
+| Stage | File | Responsibility |
+|-------|------|----------------|
+| Orchestration | `src/chatbot/chatbot_flow.py` → `run_pipeline()` | Runs every stage; **this page and the chat app both call it** |
+| Translation | `src/translation/` (`lang_detector`, `translator`) | langdetect + Helsinki-NLP MarianMT |
+| Domain normalization | `backend/services/language_service.py` | Multilingual synonym → canonical English |
+| Preference extraction | `src/nlp/nlp_preferences.py` | Genres, mood, year range, min rating, similar_to |
+| Query building | `src/nlp/keyword_extractor.py` | Focused query + synonym expansion for TF-IDF |
+| Recommendation | `src/recommender/recommender_engine.py` | TF-IDF cosine + soft-decade ranking + filters |
+""")

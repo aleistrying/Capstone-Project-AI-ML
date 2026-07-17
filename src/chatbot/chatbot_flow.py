@@ -32,6 +32,7 @@ available, the pipeline runs in English-only mode instead of crashing.
 import sys
 import os
 import ast
+from dataclasses import dataclass, field
 
 import pandas as pd
 
@@ -41,6 +42,7 @@ from src.nlp.nlp_preferences import extract_preferences
 from src.nlp.keyword_extractor import build_genre_vocabulary, build_query
 from src.utils.explanation_generator import generate_explanation
 from src.recommender.recommender_engine import recommend_on_the_fly
+from src.utils.text_cleaning import clean_text
 
 # --- Translation layer (Brayan). Imported defensively: torch/transformers/
 # langdetect may be missing in some environments, and MarianMT models download
@@ -142,6 +144,30 @@ def _fill_pref_gaps(prefs: dict, domain: dict) -> None:
         prefs["language"] = domain["mapped_language"]
 
 
+def _apply_form_data(prefs: dict, form_data: dict | None) -> None:
+    """
+    Overlay optional structured starter-question answers onto extracted prefs.
+
+    Form values only fill gaps — anything the user typed in free text wins.
+    Mirrors the old nlp_service.extract() behaviour so the /recommend API keeps
+    honouring its FormData fields now that it runs through this pipeline.
+    """
+    if not form_data:
+        return
+    if form_data.get("genre") and not prefs.get("genres"):
+        prefs["genres"] = [form_data["genre"]]
+    if form_data.get("mood") and not prefs.get("mood"):
+        prefs["mood"] = [form_data["mood"]]
+    if form_data.get("year_range") and not prefs.get("year_range"):
+        prefs["year_range"] = form_data["year_range"]
+    if form_data.get("language") and not prefs.get("language"):
+        prefs["language"] = form_data["language"]
+    if form_data.get("min_rating") and not prefs.get("min_rating"):
+        prefs["min_rating"] = float(form_data["min_rating"])
+    if form_data.get("similar_to") and not prefs.get("similar_to"):
+        prefs["similar_to"] = form_data["similar_to"]
+
+
 def _parse_genres(raw) -> list[str]:
     """Normalize the genres_list field (a stringified list or a real list) to list[str]."""
     if isinstance(raw, list):
@@ -166,39 +192,86 @@ def _safe_year(value) -> int | None:
         return None
 
 
-def get_chat_recommendations(
+@dataclass
+class PipelineTrace:
+    """
+    Full, stage-by-stage record of one user turn through the CineAssist pipeline.
+
+    This is the SINGLE SOURCE OF TRUTH for what the recommender actually does.
+    `get_chat_recommendations` (the Streamlit chat path) and the NLP Inspector
+    page both run `run_pipeline` and read this object, so the debugging view and
+    the live app can never drift apart.
+
+    Stages:
+      0. Language & translation — detect language, translate input to English.
+      1. Preference extraction  — structured prefs from the English text.
+      2. Query building         — the FOCUSED text actually fed to TF-IDF.
+      3. Filters                — the exact state_dict passed to the recommender.
+      4. Recommendation         — cosine-similarity results (English explanations).
+    """
+    raw_input: str
+    # Stage 0 — language & translation
+    domain: dict
+    ui_language: str
+    english_input: str
+    was_translated: bool
+    translation_available: bool
+    # Stage 1 — preference extraction
+    prefs: dict
+    # Stage 2 — query building (what cosine similarity is computed against)
+    keyword_extraction: dict
+    query_text: str
+    cleaned_query: str
+    vocab_hits: list = field(default_factory=list)
+    vocab_total: int = 0
+    # Stage 3 — filters applied inside recommend_on_the_fly
+    filters: dict = field(default_factory=dict)
+    # Stage 4 — recommendation (explanations kept in English here)
+    recommendations: list = field(default_factory=list)
+    max_similarity: float = 0.0
+    broadened: bool = False
+    status: str = "ok"          # "ok" | "empty_query" | "no_matches"
+    intro_en: str = ""
+
+
+def run_pipeline(
     user_input: str,
     state_dict: dict,
     movies_df,
     vectorizer,
     tfidf_matrix=None,
-) -> tuple[str, list[dict], dict, dict]:
+    year_mode: str = "soft",
+    top_n: int = 5,
+    form_data: dict | None = None,
+) -> PipelineTrace:
     """
-    Process one user turn and return structured, card-ready recommendations.
+    Run one user turn through the WHOLE pipeline and return every intermediate
+    stage as a PipelineTrace. Explanations in the trace are in English; callers
+    that face the user (get_chat_recommendations) translate them back.
 
-    Multilingual: the user may write in any supported language. Input is
-    translated to English for processing; the intro and per-movie explanations
-    are translated back to the user's language. Movie titles are left as-is.
+    This is the centralized pipeline. Every caller — the Streamlit chat app, the
+    NLP Inspector page, and the /recommend API — runs exactly this code.
 
-    Returns (intro_text, recommendations, updated_state, meta) where each rec
-    has: title, year, rating, genres, overview, similarity, explanation.
-    meta = {"max_similarity": float, "broadened": bool, "ui_language": str}.
+    Args:
+        year_mode: "soft" (decade-distance decay, chat default) or "filter"
+                   (hard decade cut).
+        top_n:     Number of recommendations to return.
+        form_data: Optional structured starter-question filters (API path); fills
+                   only the gaps the free text left open.
     """
-    # ── Translation front: detect language, translate input to English ────────
+    # ── Stage 0: detect language, translate input to English ──────────────────
     domain = _safe_domain_normalize(user_input)
     ui_lang = _detect_ui_language(user_input, domain)
     state_dict["ui_language"] = ui_lang
     english_input = _to_english(user_input, ui_lang)
 
+    # ── Stage 1: preference extraction ────────────────────────────────────────
     prefs = extract_preferences(english_input)
     _fill_pref_gaps(prefs, domain)   # backfill from original-language domain terms
+    _apply_form_data(prefs, form_data)  # overlay optional structured filters (API)
     state_dict.update(prefs)
 
-    def _meta(max_sim, broadened):
-        return {"max_similarity": max_sim, "broadened": broadened, "ui_language": ui_lang}
-
-    # Build a FOCUSED query (keyword extraction + synonym expansion) on the
-    # English text instead of dumping the whole sentence into TF-IDF.
+    # ── Stage 2: build the FOCUSED query fed to TF-IDF cosine similarity ───────
     model_vocab = set(getattr(vectorizer, "vocabulary_", {})) or None
     extracted = build_query(english_input, _get_genre_vocab(movies_df), vocab=model_vocab)
     query_parts = (
@@ -209,30 +282,56 @@ def get_chat_recommendations(
     )
     query_text = " ".join(dict.fromkeys(p for p in query_parts if p)).strip()
 
-    if not query_text:
-        return _from_english(_GREETING, ui_lang), [], state_dict, _meta(0.0, False)
+    # Show exactly what the vectorizer sees: the query is cleaned the same way
+    # the movie corpus was, then only terms present in the vocabulary contribute
+    # to the cosine score. This is what makes the similarity verifiable.
+    cleaned_query = clean_text(query_text) if query_text else ""
+    vocab_tokens = set(getattr(vectorizer, "vocabulary_", {}))
+    q_tokens = cleaned_query.split()
+    vocab_hits = [t for t in q_tokens if t in vocab_tokens]
 
+    trace = PipelineTrace(
+        raw_input=user_input,
+        domain=domain,
+        ui_language=ui_lang,
+        english_input=english_input,
+        was_translated=(english_input.strip() != user_input.strip()),
+        translation_available=_TRANSLATION_AVAILABLE,
+        prefs=dict(prefs),
+        keyword_extraction=extracted,
+        query_text=query_text,
+        cleaned_query=cleaned_query,
+        vocab_hits=vocab_hits,
+        vocab_total=len(q_tokens),
+    )
+
+    if not query_text:
+        trace.status = "empty_query"
+        trace.intro_en = _GREETING
+        return trace
+
+    # ── Stage 3: filters (the exact state_dict passed to the recommender) ──────
     legacy_state = {
         "language": state_dict.get("language"),
         "rating":   state_dict.get("min_rating") or state_dict.get("rating"),
         "year": state_dict["year_range"][0] if state_dict.get("year_range") else None,
     }
+    trace.filters = legacy_state
 
-    # year_mode="soft": prefer the requested decade without hard-excluding strong
-    # matches just outside it. similarity_score is the decade-aware match score.
+    # ── Stage 4: TF-IDF cosine similarity + soft-decade ranking ───────────────
     recommendations = recommend_on_the_fly(
         query_text, movies_df, vectorizer, tfidf_matrix,
-        state_dict=legacy_state, year_mode="soft",
+        state_dict=legacy_state, year_mode=year_mode, top_n=top_n,
     )
 
     if recommendations is None or recommendations.empty:
-        msg = "No matches found. Try different words or a broader search."
-        return _from_english(msg, ui_lang), [], state_dict, _meta(0.0, False)
+        trace.status = "no_matches"
+        trace.intro_en = "No matches found. Try different words or a broader search."
+        return trace
 
     recs: list[dict] = []
     for _, movie in recommendations.iterrows():
         movie_dict = movie.to_dict()
-        explanation_en = generate_explanation(movie_dict, state_dict)
         recs.append(
             {
                 "title": movie_dict.get("title", "Untitled"),
@@ -241,20 +340,55 @@ def get_chat_recommendations(
                 "genres": _parse_genres(movie_dict.get("genres_list")),
                 "overview": str(movie_dict.get("overview") or "").strip(),
                 "similarity": float(movie_dict.get("similarity_score") or 0.0),
-                # Translate the explanation back to the user's language (no-op for English).
-                "explanation": _from_english(explanation_en, ui_lang),
+                # English here; the user-facing wrapper translates it back.
+                "explanation": generate_explanation(movie_dict, state_dict),
             }
         )
 
-    max_similarity = max((r["similarity"] for r in recs), default=0.0)
-    broadened = max_similarity < _LOW_CONFIDENCE_THRESHOLD
-
-    intro_en = (
+    trace.recommendations = recs
+    trace.max_similarity = max((r["similarity"] for r in recs), default=0.0)
+    trace.broadened = trace.max_similarity < _LOW_CONFIDENCE_THRESHOLD
+    trace.status = "ok"
+    trace.intro_en = (
         "I couldn't find a strong match, so here are the closest movies I have:"
-        if broadened
+        if trace.broadened
         else "Here are your recommendations:"
     )
-    return _from_english(intro_en, ui_lang), recs, state_dict, _meta(max_similarity, broadened)
+    return trace
+
+
+def get_chat_recommendations(
+    user_input: str,
+    state_dict: dict,
+    movies_df,
+    vectorizer,
+    tfidf_matrix=None,
+) -> tuple[str, list[dict], dict, dict]:
+    """
+    Process one user turn and return structured, card-ready recommendations.
+
+    Thin, user-facing wrapper over run_pipeline: it runs the centralized
+    pipeline and translates the intro + per-movie explanations back into the
+    language the user wrote in (no-op for English). Movie titles are left as-is.
+
+    Returns (intro_text, recommendations, updated_state, meta) where each rec
+    has: title, year, rating, genres, overview, similarity, explanation.
+    meta = {"max_similarity": float, "broadened": bool, "ui_language": str}.
+    """
+    trace = run_pipeline(user_input, state_dict, movies_df, vectorizer, tfidf_matrix)
+    ui_lang = trace.ui_language
+    meta = {
+        "max_similarity": trace.max_similarity,
+        "broadened": trace.broadened,
+        "ui_language": ui_lang,
+    }
+
+    intro = _from_english(trace.intro_en, ui_lang)
+    recs = [
+        {**rec, "explanation": _from_english(rec["explanation"], ui_lang)}
+        for rec in trace.recommendations
+    ]
+    return intro, recs, state_dict, meta
 
 
 def chatbot_response(
