@@ -1,5 +1,27 @@
 """
 Main evaluator class for comprehensive chatbot recommendation evaluation.
+
+RETRIEVAL ALIGNMENT (why this evaluator mirrors the deployed pipeline)
+----------------------------------------------------------------------
+An earlier version fed the RAW user sentence straight into the recommender, so
+filler words ("I would like to see a movie that ...") diluted the query vector
+and retrieval was far worse than the live app -- which drove every metric to
+0.00. The deployed system never does that: `run_pipeline` (src.chatbot.
+chatbot_flow) first builds a FOCUSED query (keyword extraction + genre-vocabulary
+expansion) and a structured filter `state_dict` (language / rating / year), then
+calls `recommend_on_the_fly`.
+
+This evaluator now reproduces that same Stage-1/2/3 query construction before
+retrieval, using the exact building blocks the pipeline uses:
+    - `extract_preferences` (src.nlp.nlp_preferences) -> genres/mood/language/
+      year_range/min_rating,
+    - `build_query`         (src.nlp.keyword_extractor) -> focused query string,
+constructed identically to `run_pipeline`, then passes the focused query and
+`state_dict` to the recommender. We call `recommend_on_the_fly` directly (rather
+than `run_pipeline`) because its returned DataFrame INCLUDES the `movieId`
+column, which the ID-based metrics need -- `run_pipeline`'s trace.recommendations
+dicts do not carry movieId. Chatbot_flow is intentionally NOT imported so the
+metrics module stays free of the optional translation dependencies.
 """
 
 from .metrics import (
@@ -10,6 +32,9 @@ from .metrics import (
     calculate_mean_reciprocal_rank
 )
 from .test_data import get_test_scenarios
+
+from src.nlp.nlp_preferences import extract_preferences
+from src.nlp.keyword_extractor import build_genre_vocabulary, build_query
 
 
 class Evaluator:
@@ -22,7 +47,10 @@ class Evaluator:
         Initialize the evaluator.
 
         Args:
-            recommender_func: Function that takes query and returns recommended movie IDs
+            recommender_func: Recommender callable. Expected signature matches
+                `recommend_on_the_fly(query, movies_df, vectorizer, tfidf_matrix,
+                state_dict=..., top_n=...)` and it must return a DataFrame with a
+                `movieId` column.
             movies_df: DataFrame containing movie data
             vectorizer: TF-IDF vectorizer (or any vectorizer used)
             tfidf_matrix: Pre-computed TF-IDF matrix (optional)
@@ -33,6 +61,41 @@ class Evaluator:
         self.tfidf_matrix = tfidf_matrix
         self.total_movies = len(movies_df) if movies_df is not None else 0
         self.results = []
+
+        # Query-building assets, mirroring run_pipeline: the dataset genre
+        # vocabulary (for genre detection) and the model vocabulary (so thematic
+        # expansion never introduces out-of-vocabulary noise).
+        self._genre_vocab = (
+            build_genre_vocabulary(movies_df) if movies_df is not None else set()
+        )
+        self._model_vocab = set(getattr(vectorizer, "vocabulary_", {})) or None
+
+    def _build_focused_query(self, user_input):
+        """
+        Turn a raw user sentence into the (focused_query, state_dict) pair the
+        deployed pipeline would use. Mirrors run_pipeline Stages 1-3.
+
+        Returns:
+            (query_text, state_dict) where state_dict carries the language /
+            rating / year filters the recommender applies.
+        """
+        prefs = extract_preferences(user_input)
+        extracted = build_query(user_input, self._genre_vocab, vocab=self._model_vocab)
+
+        query_parts = (
+            (prefs.get("genres") or [])
+            + (prefs.get("mood") or [])
+            + extracted["entities"]["genres"]
+            + extracted["query"].split()
+        )
+        query_text = " ".join(dict.fromkeys(p for p in query_parts if p)).strip()
+
+        state_dict = {
+            "language": prefs.get("language"),
+            "rating": prefs.get("min_rating") or prefs.get("rating"),
+            "year": prefs.get("year_range")[0] if prefs.get("year_range") else None,
+        }
+        return query_text, state_dict
 
     def evaluate_single_query(self, user_input, relevant_ids, top_n=5):
         """
@@ -46,15 +109,32 @@ class Evaluator:
         Returns:
             dict: Evaluation metrics for this query
         """
-        # Get recommendations from the recommender
-        query_text = user_input
-        recommendations = self.recommender_func(
-            query_text,
-            self.movies_df,
-            self.vectorizer,
-            self.tfidf_matrix,
-            top_n=top_n
-        )
+        # Build the focused query + filters exactly like the deployed pipeline,
+        # then retrieve. This is what makes predicted IDs come from the SAME path
+        # the live app uses (see module docstring).
+        query_text, state_dict = self._build_focused_query(user_input)
+
+        if not query_text:
+            recommendations = self.movies_df.iloc[0:0]
+        else:
+            try:
+                recommendations = self.recommender_func(
+                    query_text,
+                    self.movies_df,
+                    self.vectorizer,
+                    self.tfidf_matrix,
+                    state_dict=state_dict,
+                    top_n=top_n,
+                )
+            except TypeError:
+                # Fallback for a recommender that doesn't accept state_dict.
+                recommendations = self.recommender_func(
+                    query_text,
+                    self.movies_df,
+                    self.vectorizer,
+                    self.tfidf_matrix,
+                    top_n=top_n,
+                )
 
         # Extract movie IDs from recommendations (assuming movieId column)
         if recommendations.empty:
@@ -79,6 +159,8 @@ class Evaluator:
 
         result = {
             "user_input": user_input,
+            "focused_query": query_text,   # what the pipeline actually retrieves on
+            "filters": state_dict,         # language / rating / year applied
             "predicted_ids": predicted_ids,
             "relevant_ids": relevant_ids,
             "precision": precision,
