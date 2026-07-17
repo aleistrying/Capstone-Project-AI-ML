@@ -38,13 +38,23 @@ SUPPORTED LANGUAGES
 Any language langdetect identifies that is NOT in this set falls back to 'en'.
 """
 
-from langdetect import detect, DetectorFactory
+from langdetect import detect_langs, DetectorFactory
 from langdetect.lang_detect_exception import LangDetectException
 
 # Fix the random seed so detection is reproducible across runs.
 # Without this, langdetect uses a random seed and the same text can
 # return different results on different calls.
 DetectorFactory.seed = 42
+
+# Languages we AUTO-translate from a detected user message. Deliberately a
+# subset of SUPPORTED: langdetect confuses short Romance phrases (a common
+# shape for movie requests) — e.g. "comedia romantica" scores Italian 1.00,
+# "hola" scores Welsh — and picking Italian/German would send the pipeline off
+# to download an uncached MarianMT model mid-request and stall the UI. We only
+# auto-route the languages we actually support end-to-end with cached models
+# (en/es/fr/pt); any other guess (it, de, cy, da, …) falls back to English,
+# which is always safe (no surprise download, no hang).
+AUTO_DETECT = {'en', 'es', 'fr', 'pt'}
 
 # Languages we have translation models for (see translator.py SUPPORTED_PAIRS).
 SUPPORTED = {'en', 'es', 'fr', 'pt', 'de', 'it'}
@@ -87,10 +97,16 @@ def detect_language(text: str) -> str:
     if not text or not text.strip():
         return 'en'
     try:
-        lang = detect(text)
-        # Only return the detected language if we have a model for it.
-        # Everything else (e.g. Japanese 'ja', Arabic 'ar') falls back to English.
-        return lang if lang in SUPPORTED else 'en'
+        candidates = detect_langs(text)
     except LangDetectException:
         # Raised for very short or ambiguous text (e.g. a single number).
         return 'en'
+    if not candidates:
+        return 'en'
+    top = candidates[0]
+    # Only auto-route languages we support end-to-end with cached models.
+    # Everything else (unsupported languages like 'ja', or short-Romance
+    # misdetections like Spanish→Italian) falls back to English.
+    if top.lang in AUTO_DETECT:
+        return top.lang
+    return 'en'
