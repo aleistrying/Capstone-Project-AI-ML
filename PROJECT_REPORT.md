@@ -55,7 +55,7 @@ charts and a short list of follow-up code (§4).
 
 ## 4. Evaluation & Outstanding Work
 
-- **Charts** — not generated yet. `python src/evaluation/benchmark.py` runs
+- **Charts** — not generated yet. `python -m src.metrics.benchmark` runs
   labelled prompts through the live pipeline for precision@5 / match% (needs
   re-running now that the model is retrained on the larger dataset).
   `pytest brayan/test_translation.py -v` covers translation correctness, but
@@ -72,5 +72,6 @@ charts and a short list of follow-up code (§4).
 - Translation module merge: committed locally (`f6aae4b`), not pushed.
 - Retrained `.pkl` model files: unstaged.
 - `PROJECT_REPORT.md`, `data/processed/`, `data/raw/`,
-  `src/data/retrain_from_final.py`, `src/evaluation/benchmark.py`: untracked.
+  `src/data/retrain_from_final.py`: untracked. The live-pipeline benchmark
+  now lives in `src/metrics/benchmark.py` (merged into the metrics module).
 - Nothing pushed to `origin`.

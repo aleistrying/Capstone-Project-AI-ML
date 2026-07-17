@@ -62,7 +62,8 @@ src/metrics/
 ├── __init__.py              # Package initialization
 ├── metrics.py               # Core metric calculation functions
 ├── test_data.py             # Predefined test scenarios
-├── evaluator.py             # Main Evaluator class
+├── evaluator.py             # Main Evaluator class (ID-based ground-truth eval)
+├── benchmark.py             # Live-pipeline genre-overlap benchmark (CLI: python -m src.metrics.benchmark)
 └── README.md                # This file
 ```
 

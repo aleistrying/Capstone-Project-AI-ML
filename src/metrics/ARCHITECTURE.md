@@ -13,7 +13,8 @@ src/metrics/
 ├── __init__.py                    # Package initialization & exports
 ├── metrics.py                     # Core metric calculation functions
 ├── test_data.py                   # Predefined test scenarios & ground truth
-├── evaluator.py                   # Main Evaluator class orchestrator
+├── evaluator.py                   # Main Evaluator class orchestrator (ID-based ground-truth eval)
+├── benchmark.py                   # Live-pipeline genre-overlap benchmark (David) — CLI: python -m src.metrics.benchmark
 ├── setup_and_run.py               # Helper script for exploration & evaluation
 ├── example_usage.py               # Usage examples for the module
 ├── create_flowchart.py            # Script to generate this documentation
