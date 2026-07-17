@@ -56,12 +56,15 @@ User Input (any language)
                          │ English text
                          ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  Backend Controller  (backend/main.py / chatbot_flow.py)        │
+│  Pipeline  (src/chatbot/chatbot_flow.py → run_pipeline)         │
+│  The single pipeline shared by the chat app, NLP Inspector,     │
+│  and the /recommend API.                                        │
 │                                                                 │
 │  1. language_service   → fast domain-term normalization         │
-│  2. nlp_service        → extract structured preferences         │
-│  3. recommender_service → TF-IDF + cosine similarity           │
-│  4. explanation_service → generate per-movie explanation        │
+│  2. nlp_preferences    → extract structured preferences         │
+│  3. keyword_extractor  → build focused TF-IDF query             │
+│  4. recommender_engine → TF-IDF + cosine similarity             │
+│  5. explanation_generator → per-movie explanation               │
 └────────────────────────┬────────────────────────────────────────┘
                          │ English response
                          ▼
@@ -276,14 +279,11 @@ Capstone-Project-AI-ML/
 │       ├── 1_Metrics.py          # Evaluation dashboard (Precision/Recall/F1/MRR)
 │       └── 2_NLP_Inspector.py    # NLP pipeline trace for any input text
 ├── backend/
-│   ├── main.py                   # Central controller
+│   ├── main.py                   # /recommend adapter over run_pipeline
 │   ├── api/
 │   │   └── routes.py             # FastAPI routes (optional REST API)
 │   └── services/
 │       ├── language_service.py   # Language detection + domain normalization
-│       ├── nlp_service.py        # Preference extraction wrapper
-│       ├── recommender_service.py# TF-IDF recommendation wrapper
-│       ├── explanation_service.py# Explanation wrapper
 │       └── translation_service.py# Translation wrapper (wired to src/translation/)
 ├── src/
 │   ├── nlp/
