@@ -334,10 +334,12 @@ def run_pipeline(
         movie_dict = movie.to_dict()
         recs.append(
             {
+                "movieId": int(movie_dict["movieId"]) if pd.notna(movie_dict.get("movieId")) else None,
                 "title": movie_dict.get("title", "Untitled"),
                 "year": _safe_year(movie_dict.get("release_year")),
                 "rating": movie_dict.get("vote_average"),
                 "genres": _parse_genres(movie_dict.get("genres_list")),
+                "language": movie_dict.get("original_language"),
                 "overview": str(movie_dict.get("overview") or "").strip(),
                 "similarity": float(movie_dict.get("similarity_score") or 0.0),
                 # English here; the user-facing wrapper translates it back.

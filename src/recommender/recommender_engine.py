@@ -85,5 +85,7 @@ def recommend_on_the_fly(
     cols = ['movieId','title', 'genres_list', 'vote_average', 'similarity_score', 'overview']
     if 'release_year' in recommendations.columns:
         cols.insert(2, 'release_year')
+    if 'original_language' in recommendations.columns:
+        cols.append('original_language')
 
     return recommendations[cols]
