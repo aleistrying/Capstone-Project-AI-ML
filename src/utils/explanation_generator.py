@@ -5,7 +5,8 @@ def generate_explanation(movie_data: dict, user_prefs: dict) -> str:
     Args:
         movie_data: Dict or Series with keys title, genres / genres_list,
                     release_year / year, vote_average / rating, overview.
-        user_prefs: Preferences dict from nlp_service.extract().
+        user_prefs: Structured preferences dict (genres, mood, year_range,
+                    language, min_rating, similar_to) from the pipeline.
     """
     reasons = []
 

@@ -149,8 +149,8 @@ def _apply_form_data(prefs: dict, form_data: dict | None) -> None:
     Overlay optional structured starter-question answers onto extracted prefs.
 
     Form values only fill gaps — anything the user typed in free text wins.
-    Mirrors the old nlp_service.extract() behaviour so the /recommend API keeps
-    honouring its FormData fields now that it runs through this pipeline.
+    This lets the /recommend API keep honouring its FormData fields now that it
+    runs through this single pipeline.
     """
     if not form_data:
         return

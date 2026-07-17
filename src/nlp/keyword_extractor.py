@@ -2,8 +2,8 @@
 Keyword / entity extraction for building focused recommendation queries.
 
 ORIGINAL AUTHOR: Lili Marcela Pérez Clavijo.
-This logic was written by Lili in `notebooks/lili/MovieBot.py` (her intent-based
-chatbot). It is ported here into the project's `src/` so the Streamlit MVP can
+This logic originated in Lili's intent-based chatbot prototype (notebooks/lili/).
+It is ported here into the project's `src/` so the Streamlit MVP can
 reuse it. Ported / adapted by the MVP integration (Alejandro) to:
   - build the genre vocabulary from THIS project's dataset (data/processed),
   - keep using the project's saved TF-IDF model (Lili's model is not used),

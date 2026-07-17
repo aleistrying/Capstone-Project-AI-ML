@@ -16,8 +16,6 @@ src/metrics/
 ├── evaluator.py                   # Main Evaluator class orchestrator (ID-based ground-truth eval)
 ├── benchmark.py                   # Live-pipeline genre-overlap benchmark (David) — CLI: python -m src.metrics.benchmark
 ├── setup_and_run.py               # Helper script for exploration & evaluation
-├── example_usage.py               # Usage examples for the module
-├── create_flowchart.py            # Script to generate this documentation
 ├── README.md                      # User-facing documentation
 ├── ARCHITECTURE.md                # This file (technical docs)
 ├── METRICS_FLOWCHART.pdf          # Visual architecture diagram
@@ -220,16 +218,7 @@ python setup_and_run.py --action setup
 
 ---
 
-### 5. `example_usage.py` - Usage Examples
-
-**Purpose:** Demonstrates how to use the metrics module.
-
-**4 Example Functions:**
-
-1. `example_1_single_query_evaluation()` - Evaluate one query
-2. `example_2_batch_evaluation()` - Evaluate all scenarios
-3. `example_3_view_test_scenarios()` - View available test cases
-4. `example_4_custom_evaluation()` - Create custom test cases
+### 5. Programmatic usage
 
 **Usage:**
 ```python
@@ -559,9 +548,6 @@ python setup_and_run.py --action explore
 # View test scenarios
 python -c "from src.metrics.test_data import print_test_scenarios; print_test_scenarios()"
 
-# Run single query evaluation
-python src/metrics/example_usage.py
-
 # Run full evaluation
 python setup_and_run.py --action run
 
@@ -578,7 +564,7 @@ The Metrics module provides a complete evaluation framework:
 1. **metrics.py** - Pure calculation functions (no side effects)
 2. **test_data.py** - Ground truth test cases
 3. **evaluator.py** - Orchestration & aggregation
-4. **setup_and_run.py** - CLI interface for common tasks
-5. **example_usage.py** - Usage patterns & examples
+4. **benchmark.py** - Live-pipeline genre-overlap benchmark (CLI)
+5. **setup_and_run.py** - CLI interface for common tasks
 
 All modules work together to measure recommendation quality across 10 diverse test scenarios, providing precision, recall, accuracy, F1 score, and MRR metrics.
