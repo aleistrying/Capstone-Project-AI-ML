@@ -1,3 +1,24 @@
+# ---------------------------------------------------------------------------
+# Deploy branch requirements — Streamlit Community Cloud.
+#
+# Deliberately slimmer than main's. The hosted container has ~1 GB of RAM and no
+# persistent disk, so the ML translation stack is left out:
+#
+#   torch, torchvision, transformers, sentencepiece, datasets, evaluate, sacrebleu
+#
+# MarianMT alone downloads ~300 MB per language pair on first use, and a cold
+# start would re-download it every time the container recycles. src/chatbot/
+# chatbot_flow.py imports translation lazily and no-ops when it is unavailable,
+# so the hosted app runs English-only instead of failing. Page 4 (Translation
+# Quality) still loads — src/metrics/translation_quality.py imports torch inside
+# its functions — but reports the ML scorer as unavailable.
+#
+# spacy is also dropped: it appears only in notebooks/lili/project.ipynb, never
+# on the serving path.
+#
+# For the full multilingual experience, install main's requirements.txt locally.
+# ---------------------------------------------------------------------------
+
 # Core data and ML
 pandas
 numpy
@@ -5,11 +26,13 @@ scikit-learn
 joblib
 scipy
 
+# Parquet engine for data/processed/movies_final.parquet
+pyarrow
+
 # NLP
 nltk
-spacy
 
-# Web / API
+# Web / API — backend/main.py is not served on Cloud, but keep the deps aligned
 fastapi
 uvicorn[standard]
 pydantic
@@ -21,16 +44,9 @@ streamlit
 rapidfuzz
 requests
 
-# Translation (Brayan — multilingual support module)
-# These packages enable full sentence translation using offline HuggingFace models.
-# No API key needed. Models are downloaded automatically on first use (~300 MB each).
-transformers>=4.30.0   # MarianMT model architecture from HuggingFace
-torch                  # Deep learning backend for running the models
-sentencepiece          # Tokenizer required by MarianMT
-langdetect             # Statistical language identification (Google's langdetect)
-datasets               # HuggingFace Datasets — used only for fine-tuning (fine_tune.py)
-evaluate               # HuggingFace Evaluate — BLEU metric for fine-tuning
-sacrebleu              # Standard BLEU scorer used by evaluate
+# Language identification — pure Python, no model download, so the app can still
+# report which language it detected even with translation disabled.
+langdetect
 
 # Testing
 pytest

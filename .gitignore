@@ -3,3 +3,8 @@ venv/
 .venv/
 graphify-out/
 *.pyc
+
+# Deploy branch: the full-size artifacts are replaced by movies_final.parquet and
+# tfidf_matrix.npz (see src/data/build_deploy_assets.py). Keeping the .pkl out of
+# this branch is what lets it stay free of Git LFS, which Streamlit Cloud cannot read.
+models/tfidf_matrix.pkl

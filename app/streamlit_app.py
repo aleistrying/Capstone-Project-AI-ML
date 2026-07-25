@@ -5,10 +5,7 @@ Runs locally:  streamlit run app/streamlit_app.py
 """
 
 import streamlit as st
-import pandas as pd
-import joblib
 import sys
-import os
 from pathlib import Path
 
 # Resolve project root regardless of where the script is launched from
@@ -17,46 +14,13 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.chatbot.chatbot_flow import get_chat_recommendations, initialize_conversation_state
 from app.movie_cards import inject_css, render_recommendations
+from app.assets import dataset_label, load_assets_or_stop
 
 # ---------------------------------------------------------------------------
-# Asset loading (cached across reruns)
+# Asset loading — shared cache with every page under app/pages/ (see app/assets.py)
 # ---------------------------------------------------------------------------
 
-DATA_PATH    = PROJECT_ROOT / "data" / "processed"
-MODELS_PATH  = PROJECT_ROOT / "models"
-
-
-@st.cache_resource
-def load_assets():
-    csv_files = list(DATA_PATH.glob("*.csv"))
-    if not csv_files:
-        st.error(
-            "No processed dataset found in data/processed/. "
-            "Run the preprocessing notebook first."
-        )
-        st.stop()
-    movies_df = pd.read_csv(csv_files[0])
-
-    vec_path = MODELS_PATH / "tfidf_vectorizer.pkl"
-    if not vec_path.exists():
-        st.error("tfidf_vectorizer.pkl not found in models/. Run notebook 03_Vectorization first.")
-        st.stop()
-    vectorizer = joblib.load(vec_path)
-
-    mat_path = MODELS_PATH / "tfidf_matrix.pkl"
-    npz_path = MODELS_PATH / "tfidf_matrix.npz"
-    if npz_path.exists():
-        from scipy.sparse import load_npz
-        tfidf_matrix = load_npz(str(npz_path))
-    elif mat_path.exists():
-        tfidf_matrix = joblib.load(mat_path)
-    else:
-        tfidf_matrix = None
-
-    return movies_df, vectorizer, tfidf_matrix
-
-
-movies_df, vectorizer, tfidf_matrix = load_assets()
+movies_df, vectorizer, tfidf_matrix = load_assets_or_stop()
 
 # ---------------------------------------------------------------------------
 # Page config
@@ -81,34 +45,29 @@ with st.sidebar:
     # -----------------------------------------------------------------------
     with st.expander("🔧 Model diagnostics"):
         n_movies = len(movies_df)
-        n_docs, n_terms = (tfidf_matrix.shape if tfidf_matrix is not None else (0, 0))
-        vocab_size = len(getattr(vectorizer, "vocabulary_", {}))
+        n_docs, n_terms = tfidf_matrix.shape
+        vocabulary = getattr(vectorizer, "vocabulary_", {})
 
         c1, c2 = st.columns(2)
         c1.metric("Movies (rows)", f"{n_movies:,}")
         c2.metric("Matrix rows", f"{n_docs:,}")
         c1.metric("Matrix terms", f"{n_terms:,}")
-        c2.metric("Vocabulary", f"{vocab_size:,}")
+        c2.metric("Vocabulary", f"{len(vocabulary):,}")
 
-        if tfidf_matrix is not None and n_docs == n_movies:
-            st.success(f"Matrix rows match movies ({n_movies:,}) ✓")
-        else:
-            st.error(
-                f"Mismatch: matrix has {n_docs:,} rows but data has {n_movies:,}. "
-                "Rebuild with `python src/data/preprocess.py`."
-            )
-
-        _loaded = list(DATA_PATH.glob("*.csv"))
-        st.caption(f"Dataset: `{_loaded[0].name if _loaded else 'none'}`")
+        # load_assets_or_stop() already halts on a row-count mismatch, so reaching
+        # this point means the two line up.
+        st.success(f"Matrix rows match movies ({n_movies:,}) ✓")
+        st.caption(f"Dataset: `{dataset_label()}`")
 
         # Query inspector — see how text is cleaned and how many terms hit the vocab
         probe = st.text_input("Inspect a query", "batman superhero gotham")
         if probe:
             from src.utils.text_cleaning import clean_text
             cleaned = clean_text(probe)
-            vec_tokens = set(getattr(vectorizer, "vocabulary_", {}))
             toks = cleaned.split()
-            hits = [t for t in toks if t in vec_tokens]
+            # Probe the vocabulary dict directly — copying its ~857K keys into a
+            # set on every rerun costs more memory than the container can spare.
+            hits = [t for t in toks if t in vocabulary]
             st.write(f"Cleaned → `{cleaned or '(empty)'}`")
             st.write(f"Vocab hits: **{len(hits)}/{len(toks)}** → {hits or '—'}")
             if toks and not hits:

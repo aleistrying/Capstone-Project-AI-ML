@@ -18,13 +18,13 @@ the filters applied, and the resulting cosine-similarity recommendations.
 import sys
 from pathlib import Path
 
-import joblib
 import pandas as pd
 import streamlit as st
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from app.assets import load_assets_or_stop
 from src.chatbot.chatbot_flow import run_pipeline, initialize_conversation_state
 
 st.set_page_config(
@@ -40,47 +40,10 @@ st.caption(
 )
 
 # ---------------------------------------------------------------------------
-# Assets — same models/data the live app and Metrics page use
+# Assets — same models/data the live app and Metrics page use, one shared cache
 # ---------------------------------------------------------------------------
 
-DATA_PATH   = PROJECT_ROOT / "data" / "processed"
-MODELS_PATH = PROJECT_ROOT / "models"
-
-
-@st.cache_resource(show_spinner="Loading models & dataset…")
-def load_assets():
-    csv_files = list(DATA_PATH.glob("*.csv"))
-    if not csv_files:
-        return None, None, None
-    movies_df = pd.read_csv(csv_files[0])
-
-    vec_path = MODELS_PATH / "tfidf_vectorizer.pkl"
-    if not vec_path.exists():
-        return movies_df, None, None
-    vectorizer = joblib.load(vec_path)
-
-    npz_path = MODELS_PATH / "tfidf_matrix.npz"
-    mat_path = MODELS_PATH / "tfidf_matrix.pkl"
-    if npz_path.exists():
-        from scipy.sparse import load_npz
-        tfidf_matrix = load_npz(str(npz_path))
-    elif mat_path.exists():
-        tfidf_matrix = joblib.load(mat_path)
-    else:
-        tfidf_matrix = None
-
-    return movies_df, vectorizer, tfidf_matrix
-
-
-movies_df, vectorizer, tfidf_matrix = load_assets()
-assets_ready = movies_df is not None and vectorizer is not None and tfidf_matrix is not None
-
-if not assets_ready:
-    st.error(
-        "Models or dataset not found. Build them first:\n\n"
-        "```bash\npython src/data/preprocess.py\n```"
-    )
-    st.stop()
+movies_df, vectorizer, tfidf_matrix = load_assets_or_stop()
 
 # ---------------------------------------------------------------------------
 # Sample queries + sidebar reference

@@ -1,5 +1,4 @@
 import numpy as np
-from sklearn.metrics.pairwise import linear_kernel
 import pandas as pd
 
 from src.utils.text_cleaning import clean_text
@@ -28,15 +27,35 @@ def recommend_on_the_fly(
     # tokens won't match the TF-IDF vocabulary and similarity collapses.
     query_vector = vectorizer.transform([clean_text(query_text)])
 
-    cosine_sim_scores = linear_kernel(query_vector, tfidf_matrix).flatten()
+    # Equivalent to linear_kernel(query_vector, tfidf_matrix) — TF-IDF rows are
+    # L2-normalized, so the dot product IS the cosine — but multiplying in this
+    # direction avoids transposing the 87K x 857K matrix, which allocated ~190 MB
+    # per call. Results are bit-for-bit identical; this just picks the cheap side.
+    cosine_sim_scores = (tfidf_matrix @ query_vector.T).toarray().ravel()
 
-    temp_df = movies_df.copy()
-    temp_df['similarity_score'] = cosine_sim_scores
+    # Score, filter and rank on a narrow numeric frame rather than on a copy of
+    # movies_df. Deep-copying all ~87K x 10 columns per query and then sorting
+    # every one of them cost ~250 MB of peak RSS — more than the hosted
+    # container can spare. The display columns are pulled from movies_df once
+    # the top-N rows are known, so the returned frame is unchanged.
+    scored_df = pd.DataFrame(
+        {'similarity_score': cosine_sim_scores}, index=movies_df.index
+    )
+    for col in ('original_language', 'vote_average'):
+        if col in movies_df.columns:
+            scored_df[col] = movies_df[col]
 
     # Extract year from release_date if release_year doesn't exist
-    if 'release_year' not in temp_df.columns and 'release_date' in temp_df.columns:
-        temp_df['release_year'] = pd.to_datetime(temp_df['release_date'], errors='coerce').dt.year
+    if 'release_year' in movies_df.columns:
+        scored_df['release_year'] = movies_df['release_year']
+    elif 'release_date' in movies_df.columns:
+        scored_df['release_year'] = pd.to_datetime(
+            movies_df['release_date'], errors='coerce'
+        ).dt.year
 
+    # scored_df stays pristine and unfiltered for the no-results fallback below;
+    # temp_df is the working frame the filters narrow down.
+    temp_df = scored_df
     rank_col = 'similarity_score'
 
     if state_dict:
@@ -55,7 +74,11 @@ def recommend_on_the_fly(
                 decay = np.where(in_decade, 1.0, year_decay ** decades_away)
                 decay = np.where(np.isnan(yr), 0.5, decay)  # unknown year: mild penalty
                 # Fold the decade decay into similarity_score so the displayed
-                # match % and the ranking stay consistent.
+                # match % and the ranking stay consistent. Copy first when no
+                # filter has replaced temp_df yet, so the decay never leaks into
+                # scored_df — the fallback below must rank on raw similarity.
+                if temp_df is scored_df:
+                    temp_df = temp_df.copy()
                 temp_df['similarity_score'] = temp_df['similarity_score'].to_numpy() * decay
             else:
                 temp_df = temp_df[temp_df['release_year'].between(target_year - 2, target_year + 5)]
@@ -64,22 +87,19 @@ def recommend_on_the_fly(
         if state_dict.get('rating'):
             temp_df = temp_df[temp_df['vote_average'] >= float(state_dict['rating'])]
 
-    recommendations = temp_df.sort_values(by=rank_col, ascending=False).head(top_n)
+    ranked = temp_df.sort_values(by=rank_col, ascending=False).head(top_n)
 
-    if recommendations.empty:
+    if ranked.empty:
         # Filters removed every candidate. Fall back to the closest matches by raw
-        # similarity (ignoring filters) so the UI still has something to show. Build
-        # this from the same scored frame so the returned columns — including
+        # similarity (ignoring filters) so the UI still has something to show. Rank
+        # the unfiltered scored frame, so the returned columns — including
         # similarity_score — stay identical to the normal path.
-        scored_df = movies_df.copy()
-        scored_df['similarity_score'] = cosine_sim_scores
-        if 'release_year' not in scored_df.columns and 'release_date' in scored_df.columns:
-            scored_df['release_year'] = pd.to_datetime(
-                scored_df['release_date'], errors='coerce'
-            ).dt.year
-        recommendations = scored_df.sort_values(
-            by='similarity_score', ascending=False
-        ).head(top_n)
+        ranked = scored_df.sort_values(by='similarity_score', ascending=False).head(top_n)
+
+    # Re-attach the display columns for just the handful of surviving rows.
+    recommendations = movies_df.loc[ranked.index].copy()
+    for col in ranked.columns:
+        recommendations[col] = ranked[col]
 
     # Select columns, handling missing release_year
     cols = ['movieId','title', 'genres_list', 'vote_average', 'similarity_score', 'overview']

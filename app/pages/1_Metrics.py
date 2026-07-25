@@ -9,13 +9,13 @@ import sys
 import time
 from pathlib import Path
 
-import joblib
 import pandas as pd
 import streamlit as st
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from app.assets import load_assets_or_stop
 from src.metrics.evaluator import Evaluator
 from src.metrics.test_data import get_test_scenarios
 from src.recommender.recommender_engine import recommend_on_the_fly
@@ -29,49 +29,10 @@ st.title("📊 Evaluation Metrics")
 st.caption("Precision@5 · Recall@5 · F1 · MRR · Accuracy across 10 predefined test scenarios")
 
 # ---------------------------------------------------------------------------
-# Asset loading
+# Asset loading — shared cache with the main app and every other page
 # ---------------------------------------------------------------------------
 
-DATA_PATH   = PROJECT_ROOT / "data" / "processed"
-MODELS_PATH = PROJECT_ROOT / "models"
-
-
-@st.cache_resource(show_spinner="Loading models…")
-def load_assets():
-    csv_files = list(DATA_PATH.glob("*.csv"))
-    if not csv_files:
-        return None, None, None
-    movies_df = pd.read_csv(csv_files[0])
-
-    vec_path = MODELS_PATH / "tfidf_vectorizer.pkl"
-    mat_path = MODELS_PATH / "tfidf_matrix.pkl"
-    npz_path = MODELS_PATH / "tfidf_matrix.npz"
-
-    if not vec_path.exists():
-        return movies_df, None, None
-    vectorizer = joblib.load(vec_path)
-
-    if npz_path.exists():
-        from scipy.sparse import load_npz
-        tfidf_matrix = load_npz(str(npz_path))
-    elif mat_path.exists():
-        tfidf_matrix = joblib.load(mat_path)
-    else:
-        tfidf_matrix = None
-
-    return movies_df, vectorizer, tfidf_matrix
-
-
-movies_df, vectorizer, tfidf_matrix = load_assets()
-
-assets_ready = movies_df is not None and vectorizer is not None and tfidf_matrix is not None
-
-if not assets_ready:
-    st.error(
-        "Models or dataset not found. Run the preprocessing script first:\n\n"
-        "```bash\npython src/data/preprocess.py\n```"
-    )
-    st.stop()
+movies_df, vectorizer, tfidf_matrix = load_assets_or_stop()
 
 # ---------------------------------------------------------------------------
 # Sidebar — test scenario info
