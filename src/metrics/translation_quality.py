@@ -65,19 +65,14 @@ PUBLIC API
 """
 
 import csv
+import importlib
+import importlib.util
+import itertools
 import os
 import statistics
-import sys
 import tempfile
-from pathlib import Path
-
-# Make ``src`` importable when run as a script or module.
-_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
 
 from src.metrics.translation_eval_data import (
-    EVAL_PAIRS,
     all_directions,
     eval_set_sizes,
     get_pairs,
@@ -89,9 +84,10 @@ from src.metrics.translation_eval_data import (
 # transformers / sacrebleu are missing.
 # ---------------------------------------------------------------------------
 try:
-    import sacrebleu  # noqa: F401
+    import sacrebleu as _sacrebleu
+
     _HAS_SACREBLEU = True
-except Exception:  # pragma: no cover - environment dependent
+except ImportError:  # pragma: no cover - environment dependent
     _HAS_SACREBLEU = False
 
 
@@ -155,8 +151,10 @@ def make_translate_fn(model_dir: str = None):
     Returns:
         The real translate callable from the translation module.
     """
-    from src.translation.translator import translate as _translate
-    return _translate
+    del model_dir  # compatibility hook retained for callers using the keyword
+    # Lazy by design: importing this module must not require the heavy ML stack.
+    translator = importlib.import_module("src.translation.translator")
+    return translator.translate
 
 
 # ---------------------------------------------------------------------------
@@ -192,8 +190,6 @@ def compute_bleu(translate_fn, pairs: list) -> dict:
             "sacrebleu is not installed — cannot compute BLEU. "
             "Install with: pip install sacrebleu"
         )
-    import sacrebleu
-
     hyps, refs, details = [], [], []
     for p in pairs:
         src_lang = p.get("src_lang")
@@ -206,17 +202,19 @@ def compute_bleu(translate_fn, pairs: list) -> dict:
         hyp = (hyp or "").strip()
         hyps.append(hyp)
         refs.append(p["ref"])
-        s_bleu = sacrebleu.sentence_bleu(hyp, [p["ref"]]).score
-        details.append({
-            "src": p["src"],
-            "ref": p["ref"],
-            "hyp": hyp,
-            "sentence_bleu": round(s_bleu, 2),
-        })
+        s_bleu = _sacrebleu.sentence_bleu(hyp, [p["ref"]]).score
+        details.append(
+            {
+                "src": p["src"],
+                "ref": p["ref"],
+                "hyp": hyp,
+                "sentence_bleu": round(s_bleu, 2),
+            }
+        )
 
     # sacreBLEU corpus BLEU expects references as a list-of-lists (one list per
     # reference set); we have a single reference per sentence.
-    corpus = sacrebleu.corpus_bleu(hyps, [refs])
+    corpus = _sacrebleu.corpus_bleu(hyps, [refs])
     return {
         "bleu": round(corpus.score, 2),
         "n": len(hyps),
@@ -257,7 +255,6 @@ def evaluate_translation_quality(directions=None, translate_fn=None) -> dict:
     per_pair = {}
     all_hyps, all_refs = [], []
 
-    import sacrebleu  # guarded: compute_bleu already checks availability
     for direction in directions:
         src_lang, tgt_lang = _split_direction(direction)
         pairs = [
@@ -271,13 +268,14 @@ def evaluate_translation_quality(directions=None, translate_fn=None) -> dict:
             all_refs.append(d["ref"])
 
     aggregate_score = (
-        round(sacrebleu.corpus_bleu(all_hyps, [all_refs]).score, 2)
-        if all_hyps else 0.0
+        round(_sacrebleu.corpus_bleu(all_hyps, [all_refs]).score, 2)
+        if all_hyps
+        else 0.0
     )
     return {
         "per_pair": per_pair,
         "aggregate": {"bleu": aggregate_score, "n": len(all_hyps)},
-        "sizes": {d: per_pair[d]["n"] for d in per_pair},
+        "sizes": {direction: result["n"] for direction, result in per_pair.items()},
     }
 
 
@@ -295,6 +293,7 @@ def compare_pre_post(pre_result: dict, post_result: dict) -> dict:
           "aggregate" : {"pre", "post", "delta", "verdict"}
         where verdict is "improved" | "regressed" | "unchanged".
     """
+
     def _verdict(delta: float) -> str:
         if delta > 0.01:
             return "improved"
@@ -308,16 +307,24 @@ def compare_pre_post(pre_result: dict, post_result: dict) -> dict:
         pre = pre_result["per_pair"].get(d, {}).get("bleu", 0.0)
         post = post_result["per_pair"].get(d, {}).get("bleu", 0.0)
         delta = round(post - pre, 2)
-        per_pair[d] = {"pre": pre, "post": post, "delta": delta,
-                       "verdict": _verdict(delta)}
+        per_pair[d] = {
+            "pre": pre,
+            "post": post,
+            "delta": delta,
+            "verdict": _verdict(delta),
+        }
 
     pre_agg = pre_result["aggregate"]["bleu"]
     post_agg = post_result["aggregate"]["bleu"]
     agg_delta = round(post_agg - pre_agg, 2)
     return {
         "per_pair": per_pair,
-        "aggregate": {"pre": pre_agg, "post": post_agg, "delta": agg_delta,
-                      "verdict": _verdict(agg_delta)},
+        "aggregate": {
+            "pre": pre_agg,
+            "post": post_agg,
+            "delta": agg_delta,
+            "verdict": _verdict(agg_delta),
+        },
     }
 
 
@@ -326,19 +333,20 @@ def compare_pre_post(pre_result: dict, post_result: dict) -> dict:
 # ---------------------------------------------------------------------------
 # CSV schema. Humans fill in the two *_1to5 columns and the rater column.
 HUMAN_EVAL_FIELDS = [
-    "id",                    # stable row id, e.g. "es-en-03"
-    "direction",             # "es-en"
-    "source",                # source sentence
-    "reference",             # human reference (for the rater's context)
-    "mt_output",             # machine translation to be judged (pre-filled)
-    "human_adequacy_1to5",   # 1 (meaning lost) .. 5 (meaning fully preserved)
-    "human_fluency_1to5",    # 1 (unnatural) .. 5 (perfectly natural)
-    "rater",                 # rater id/name, e.g. "rater_a"
+    "id",  # stable row id, e.g. "es-en-03"
+    "direction",  # "es-en"
+    "source",  # source sentence
+    "reference",  # human reference (for the rater's context)
+    "mt_output",  # machine translation to be judged (pre-filled)
+    "human_adequacy_1to5",  # 1 (meaning lost) .. 5 (meaning fully preserved)
+    "human_fluency_1to5",  # 1 (unnatural) .. 5 (perfectly natural)
+    "rater",  # rater id/name, e.g. "rater_a"
 ]
 
 
-def export_human_eval_template(csv_path: str, directions=None,
-                               translate_fn=None, raters=None) -> str:
+def export_human_eval_template(
+    csv_path: str, directions=None, translate_fn=None, raters=None
+) -> str:
     """
     Write a human-eval template CSV pre-filled with base-model MT output.
 
@@ -376,11 +384,23 @@ def export_human_eval_template(csv_path: str, directions=None,
             }
             if raters:
                 for r in raters:
-                    rows.append({**base, "human_adequacy_1to5": "",
-                                 "human_fluency_1to5": "", "rater": r})
+                    rows.append(
+                        {
+                            **base,
+                            "human_adequacy_1to5": "",
+                            "human_fluency_1to5": "",
+                            "rater": r,
+                        }
+                    )
             else:
-                rows.append({**base, "human_adequacy_1to5": "",
-                             "human_fluency_1to5": "", "rater": ""})
+                rows.append(
+                    {
+                        **base,
+                        "human_adequacy_1to5": "",
+                        "human_fluency_1to5": "",
+                        "rater": "",
+                    }
+                )
 
     os.makedirs(os.path.dirname(os.path.abspath(csv_path)) or ".", exist_ok=True)
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
@@ -396,36 +416,66 @@ def _write_sample_human_eval(csv_path: str) -> str:
     runnable without any real human data. Two raters score three items.
     """
     sample = [
-        {"id": "es-en-01", "direction": "es-en",
-         "source": "Quiero una comedia romántica de los 90.",
-         "reference": "I want a romantic comedy from the 90s.",
-         "mt_output": "I want a romantic comedy from the 90s.",
-         "human_adequacy_1to5": 5, "human_fluency_1to5": 5, "rater": "rater_a"},
-        {"id": "es-en-01", "direction": "es-en",
-         "source": "Quiero una comedia romántica de los 90.",
-         "reference": "I want a romantic comedy from the 90s.",
-         "mt_output": "I want a romantic comedy from the 90s.",
-         "human_adequacy_1to5": 5, "human_fluency_1to5": 4, "rater": "rater_b"},
-        {"id": "en-es-01", "direction": "en-es",
-         "source": "I want a romantic comedy from the 90s.",
-         "reference": "Quiero una comedia romántica de los 90.",
-         "mt_output": "Quiero una comedia romántica de los 90.",
-         "human_adequacy_1to5": 5, "human_fluency_1to5": 5, "rater": "rater_a"},
-        {"id": "en-es-01", "direction": "en-es",
-         "source": "I want a romantic comedy from the 90s.",
-         "reference": "Quiero una comedia romántica de los 90.",
-         "mt_output": "Quiero una comedia romántica de los 90.",
-         "human_adequacy_1to5": 4, "human_fluency_1to5": 5, "rater": "rater_b"},
-        {"id": "fr-en-03", "direction": "fr-en",
-         "source": "Je cherche un film d'horreur qui fait vraiment peur.",
-         "reference": "I'm looking for a horror movie that is really scary.",
-         "mt_output": "I'm looking for a horror film that's really scary.",
-         "human_adequacy_1to5": 5, "human_fluency_1to5": 4, "rater": "rater_a"},
-        {"id": "fr-en-03", "direction": "fr-en",
-         "source": "Je cherche un film d'horreur qui fait vraiment peur.",
-         "reference": "I'm looking for a horror movie that is really scary.",
-         "mt_output": "I'm looking for a horror film that's really scary.",
-         "human_adequacy_1to5": 4, "human_fluency_1to5": 4, "rater": "rater_b"},
+        {
+            "id": "es-en-01",
+            "direction": "es-en",
+            "source": "Quiero una comedia romántica de los 90.",
+            "reference": "I want a romantic comedy from the 90s.",
+            "mt_output": "I want a romantic comedy from the 90s.",
+            "human_adequacy_1to5": 5,
+            "human_fluency_1to5": 5,
+            "rater": "rater_a",
+        },
+        {
+            "id": "es-en-01",
+            "direction": "es-en",
+            "source": "Quiero una comedia romántica de los 90.",
+            "reference": "I want a romantic comedy from the 90s.",
+            "mt_output": "I want a romantic comedy from the 90s.",
+            "human_adequacy_1to5": 5,
+            "human_fluency_1to5": 4,
+            "rater": "rater_b",
+        },
+        {
+            "id": "en-es-01",
+            "direction": "en-es",
+            "source": "I want a romantic comedy from the 90s.",
+            "reference": "Quiero una comedia romántica de los 90.",
+            "mt_output": "Quiero una comedia romántica de los 90.",
+            "human_adequacy_1to5": 5,
+            "human_fluency_1to5": 5,
+            "rater": "rater_a",
+        },
+        {
+            "id": "en-es-01",
+            "direction": "en-es",
+            "source": "I want a romantic comedy from the 90s.",
+            "reference": "Quiero una comedia romántica de los 90.",
+            "mt_output": "Quiero una comedia romántica de los 90.",
+            "human_adequacy_1to5": 4,
+            "human_fluency_1to5": 5,
+            "rater": "rater_b",
+        },
+        {
+            "id": "fr-en-03",
+            "direction": "fr-en",
+            "source": "Je cherche un film d'horreur qui fait vraiment peur.",
+            "reference": "I'm looking for a horror movie that is really scary.",
+            "mt_output": "I'm looking for a horror film that's really scary.",
+            "human_adequacy_1to5": 5,
+            "human_fluency_1to5": 4,
+            "rater": "rater_a",
+        },
+        {
+            "id": "fr-en-03",
+            "direction": "fr-en",
+            "source": "Je cherche un film d'horreur qui fait vraiment peur.",
+            "reference": "I'm looking for a horror movie that is really scary.",
+            "mt_output": "I'm looking for a horror film that's really scary.",
+            "human_adequacy_1to5": 4,
+            "human_fluency_1to5": 4,
+            "rater": "rater_b",
+        },
     ]
     os.makedirs(os.path.dirname(os.path.abspath(csv_path)) or ".", exist_ok=True)
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
@@ -460,6 +510,9 @@ def aggregate_human_scores(csv_path: str) -> dict:
           "inter_rater"    : {"adequacy_mean_abs_diff", "fluency_mean_abs_diff",
                               "pairs_compared"} or None if <2 raters overlap
     """
+
+    # One small schema is parsed, grouped, and compared in this coordinator.
+    # pylint: disable=too-many-locals
     def _num(v):
         try:
             return float(v)
@@ -473,18 +526,23 @@ def aggregate_human_scores(csv_path: str) -> dict:
             fl = _num(r.get("human_fluency_1to5"))
             if a is None or fl is None:
                 continue  # skip unscored rows
-            rows.append({
-                "id": r.get("id", ""),
-                "direction": r.get("direction", ""),
-                "rater": r.get("rater", ""),
-                "adequacy": a,
-                "fluency": fl,
-            })
+            rows.append(
+                {
+                    "id": r.get("id", ""),
+                    "direction": r.get("direction", ""),
+                    "rater": r.get("rater", ""),
+                    "adequacy": a,
+                    "fluency": fl,
+                }
+            )
 
     if not rows:
         return {
-            "n_ratings": 0, "raters": [], "overall": None,
-            "per_direction": {}, "inter_rater": None,
+            "n_ratings": 0,
+            "raters": [],
+            "overall": None,
+            "per_direction": {},
+            "inter_rater": None,
         }
 
     overall = {
@@ -512,14 +570,13 @@ def aggregate_human_scores(csv_path: str) -> dict:
         for r in rows:
             by_item.setdefault(r["id"], {})[r["rater"]] = r
         adiffs, fdiffs = [], []
-        for item_id, per_rater in by_item.items():
+        for per_rater in by_item.values():
             present = [rt for rt in raters if rt in per_rater]
             # compare every unordered pair of raters on this item
-            for i in range(len(present)):
-                for j in range(i + 1, len(present)):
-                    ra, rb = per_rater[present[i]], per_rater[present[j]]
-                    adiffs.append(abs(ra["adequacy"] - rb["adequacy"]))
-                    fdiffs.append(abs(ra["fluency"] - rb["fluency"]))
+            for first, second in itertools.combinations(present, 2):
+                score_a, score_b = per_rater[first], per_rater[second]
+                adiffs.append(abs(score_a["adequacy"] - score_b["adequacy"]))
+                fdiffs.append(abs(score_a["fluency"] - score_b["fluency"]))
         if adiffs:
             inter_rater = {
                 "adequacy_mean_abs_diff": round(statistics.mean(adiffs), 3),
@@ -544,14 +601,9 @@ def _check_runtime() -> str:
     missing = []
     if not _HAS_SACREBLEU:
         missing.append("sacrebleu")
-    try:
-        import torch  # noqa: F401
-        import transformers  # noqa: F401
-    except Exception:
+    if not all(importlib.util.find_spec(name) for name in ("torch", "transformers")):
         missing.append("torch/transformers")
-    try:
-        import langdetect  # noqa: F401
-    except Exception:
+    if importlib.util.find_spec("langdetect") is None:
         missing.append("langdetect")
     if missing:
         return (
@@ -628,8 +680,8 @@ def main():
                 f"\nBlank template (base-model mt_output pre-filled, scores "
                 f"empty for raters to fill) written to:\n  {blank_path}"
             )
-        except Exception as e:  # pragma: no cover
-            print(f"\n[warn] could not write blank template: {e}")
+        except (OSError, RuntimeError, ValueError) as exc:  # pragma: no cover
+            print(f"\n[warn] could not write blank template: {exc}")
 
     print("\nDone.")
 

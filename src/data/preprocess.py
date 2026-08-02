@@ -7,28 +7,24 @@ Reads raw TMDB + MovieLens files from data/raw/ and produces:
   models/tfidf_matrix.pkl
 
 Run:
-    python src/data/preprocess.py
+    python -m src.data.preprocess
 """
 
 import ast
-import sys
 from pathlib import Path
 
 import joblib
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
+from src.utils.text_cleaning import clean_text
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 ROOT = Path(__file__).resolve().parent.parent.parent
-RAW  = ROOT / "data" / "raw"
+RAW = ROOT / "data" / "raw"
 PROC = ROOT / "data" / "processed"
 MODELS = ROOT / "models"
 PROC.mkdir(parents=True, exist_ok=True)
 MODELS.mkdir(parents=True, exist_ok=True)
-
-# Make `src` importable when run as a script (python src/data/preprocess.py)
-sys.path.insert(0, str(ROOT))
-from src.utils.text_cleaning import clean_text  # noqa: E402
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -42,7 +38,7 @@ def _parse_json_names(raw, key="name", n=None):
         if n:
             names = names[:n]
         return " ".join(names)
-    except Exception:
+    except (TypeError, ValueError, SyntaxError, KeyError):
         return ""
 
 
@@ -56,7 +52,7 @@ def _parse_json_names_list(raw, key="name", n=None):
         if n:
             names = names[:n]
         return names
-    except Exception:
+    except (TypeError, ValueError, SyntaxError, KeyError):
         return []
 
 
@@ -69,8 +65,8 @@ def _extract_director(crew_raw):
         for person in crew:
             if isinstance(person, dict) and person.get("job") == "Director":
                 return person.get("name", "")
-    except Exception:
-        pass
+    except (TypeError, ValueError, SyntaxError):
+        return ""
     return ""
 
 

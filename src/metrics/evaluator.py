@@ -24,17 +24,19 @@ dicts do not carry movieId. Chatbot_flow is intentionally NOT imported so the
 metrics module stays free of the optional translation dependencies.
 """
 
+import csv
+
+from src.nlp.keyword_extractor import build_genre_vocabulary, build_query
+from src.nlp.nlp_preferences import extract_preferences
+
 from .metrics import (
     calculate_precision,
     calculate_recall,
     calculate_accuracy,
     calculate_f1_score,
-    calculate_mean_reciprocal_rank
+    calculate_mean_reciprocal_rank,
 )
 from .test_data import get_test_scenarios
-
-from src.nlp.nlp_preferences import extract_preferences
-from src.nlp.keyword_extractor import build_genre_vocabulary, build_query
 
 
 class Evaluator:
@@ -141,10 +143,10 @@ class Evaluator:
             predicted_ids = []
         else:
             # Handle different possible column names
-            if 'movieId' in recommendations.columns:
-                predicted_ids = recommendations['movieId'].tolist()
-            elif 'id' in recommendations.columns:
-                predicted_ids = recommendations['id'].tolist()
+            if "movieId" in recommendations.columns:
+                predicted_ids = recommendations["movieId"].tolist()
+            elif "id" in recommendations.columns:
+                predicted_ids = recommendations["id"].tolist()
             else:
                 predicted_ids = []
 
@@ -159,8 +161,8 @@ class Evaluator:
 
         result = {
             "user_input": user_input,
-            "focused_query": query_text,   # what the pipeline actually retrieves on
-            "filters": state_dict,         # language / rating / year applied
+            "focused_query": query_text,  # what the pipeline actually retrieves on
+            "filters": state_dict,  # language / rating / year applied
             "predicted_ids": predicted_ids,
             "relevant_ids": relevant_ids,
             "precision": precision,
@@ -168,7 +170,7 @@ class Evaluator:
             "accuracy": accuracy,
             "f1_score": f1,
             "mrr": mrr,
-            "top_n": top_n
+            "top_n": top_n,
         }
 
         self.results.append(result)
@@ -189,9 +191,7 @@ class Evaluator:
 
         for scenario in scenarios:
             result = self.evaluate_single_query(
-                scenario["user_input"],
-                scenario["relevant_movie_ids"],
-                top_n=top_n
+                scenario["user_input"], scenario["relevant_movie_ids"], top_n=top_n
             )
             result["scenario_id"] = scenario["id"]
             result["scenario_description"] = scenario["description"]
@@ -228,7 +228,7 @@ class Evaluator:
             "avg_accuracy": avg_accuracy,
             "avg_f1_score": avg_f1,
             "avg_mrr": avg_mrr,
-            "total_tests": n
+            "total_tests": n,
         }
 
     def print_results(self, results=None):
@@ -257,7 +257,7 @@ class Evaluator:
             print(f"User Input: {result['user_input']}")
             print(f"\nRecommended Movie IDs: {result['predicted_ids']}")
             print(f"Relevant Movie IDs:    {result['relevant_ids']}")
-            print(f"\nMetrics:")
+            print("\nMetrics:")
             print(f"  Precision:  {result['precision']:.3f}")
             print(f"  Recall:     {result['recall']:.3f}")
             print(f"  Accuracy:   {result['accuracy']:.3f}")
@@ -285,8 +285,6 @@ class Evaluator:
             filename: Output CSV file path
             results: List of result dicts. If None, uses self.results
         """
-        import csv
-
         if results is None:
             results = self.results
 
@@ -295,11 +293,18 @@ class Evaluator:
             return
 
         keys = [
-            "scenario_id", "user_input", "predicted_ids", "relevant_ids",
-            "precision", "recall", "accuracy", "f1_score", "mrr"
+            "scenario_id",
+            "user_input",
+            "predicted_ids",
+            "relevant_ids",
+            "precision",
+            "recall",
+            "accuracy",
+            "f1_score",
+            "mrr",
         ]
 
-        with open(filename, 'w', newline='', encoding='utf-8') as f:
+        with open(filename, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=keys)
             writer.writeheader()
 

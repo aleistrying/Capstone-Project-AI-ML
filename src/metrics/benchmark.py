@@ -20,16 +20,18 @@ Run:
 """
 
 import glob
-import sys
 from pathlib import Path
 
 import joblib
 import pandas as pd
+from scipy.sparse import load_npz
+
+from src.chatbot.chatbot_flow import (
+    get_chat_recommendations,
+    initialize_conversation_state,
+)
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(ROOT))
-
-from src.chatbot.chatbot_flow import get_chat_recommendations, initialize_conversation_state
 
 TOP_K = 5
 PASS_THRESHOLD = 0.40  # a query "passes" if >= 40% of top-k results are on-genre
@@ -39,20 +41,32 @@ PASS_THRESHOLD = 0.40  # a query "passes" if >= 40% of top-k results are on-genr
 # expected genres are matched case-insensitively against each movie's genres.
 # ---------------------------------------------------------------------------
 BENCHMARK = [
-    {"query": "a funny family movie from the 90s",                 "expected": {"comedy", "family"}},
-    {"query": "scary horror movie about a haunted house",          "expected": {"horror"}},
-    {"query": "a romantic love story",                             "expected": {"romance"}},
-    {"query": "psychological thriller with a twist",               "expected": {"thriller", "mystery"}},
-    {"query": "action packed superhero movie",                     "expected": {"action", "adventure"}},
-    {"query": "an animated movie for kids",                        "expected": {"animation", "family"}},
-    {"query": "science fiction space adventure with aliens",       "expected": {"science fiction", "adventure"}},
-    {"query": "a dark crime drama about the mafia",                "expected": {"crime", "drama"}},
-    {"query": "a war movie about soldiers",                        "expected": {"war"}},
-    {"query": "fantasy adventure with magic and dragons",          "expected": {"fantasy", "adventure"}},
-    {"query": "something like Inception, dark and mind-bending",   "expected": {"science fiction", "thriller", "mystery"}},
-    {"query": "a western with cowboys",                            "expected": {"western"}},
-    {"query": "a feel-good comedy to relax",                       "expected": {"comedy"}},
-    {"query": "a documentary about nature",                        "expected": {"documentary"}},
+    {"query": "a funny family movie from the 90s", "expected": {"comedy", "family"}},
+    {"query": "scary horror movie about a haunted house", "expected": {"horror"}},
+    {"query": "a romantic love story", "expected": {"romance"}},
+    {
+        "query": "psychological thriller with a twist",
+        "expected": {"thriller", "mystery"},
+    },
+    {"query": "action packed superhero movie", "expected": {"action", "adventure"}},
+    {"query": "an animated movie for kids", "expected": {"animation", "family"}},
+    {
+        "query": "science fiction space adventure with aliens",
+        "expected": {"science fiction", "adventure"},
+    },
+    {"query": "a dark crime drama about the mafia", "expected": {"crime", "drama"}},
+    {"query": "a war movie about soldiers", "expected": {"war"}},
+    {
+        "query": "fantasy adventure with magic and dragons",
+        "expected": {"fantasy", "adventure"},
+    },
+    {
+        "query": "something like Inception, dark and mind-bending",
+        "expected": {"science fiction", "thriller", "mystery"},
+    },
+    {"query": "a western with cowboys", "expected": {"western"}},
+    {"query": "a feel-good comedy to relax", "expected": {"comedy"}},
+    {"query": "a documentary about nature", "expected": {"documentary"}},
 ]
 
 
@@ -63,7 +77,6 @@ def load_assets():
     vec = joblib.load(ROOT / "models" / "tfidf_vectorizer.pkl")
     npz = ROOT / "models" / "tfidf_matrix.npz"
     if npz.exists():
-        from scipy.sparse import load_npz
         mat = load_npz(str(npz))
     else:
         mat = joblib.load(ROOT / "models" / "tfidf_matrix.pkl")
@@ -128,11 +141,15 @@ def run_benchmark(df=None, vec=None, mat=None):
 def main():
     df, vec, mat, csv_name = load_assets()
     print(f"Dataset: {csv_name}  ({len(df):,} movies)   |   matrix: {mat.shape}")
-    print(f"Top-k = {TOP_K}   pass threshold = precision@{TOP_K} >= {PASS_THRESHOLD:.0%}\n")
+    print(
+        f"Top-k = {TOP_K}   pass threshold = precision@{TOP_K} >= {PASS_THRESHOLD:.0%}\n"
+    )
 
     rows, agg = run_benchmark(df, vec, mat)
 
-    header = f"{'Query':<48} {'P@5':>5} {'Rec':>4} {'Match%':>7}  {'Pass':>4}  Top result"
+    header = (
+        f"{'Query':<48} {'P@5':>5} {'Rec':>4} {'Match%':>7}  {'Pass':>4}  Top result"
+    )
     print(header)
     print("-" * len(header))
     for r in rows:

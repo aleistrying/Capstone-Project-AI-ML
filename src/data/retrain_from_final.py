@@ -10,23 +10,20 @@ files — this script assumes movies_final.csv already exists (with a
   3. writes models/tfidf_vectorizer.pkl + models/tfidf_matrix.pkl.
 
 Run:
-    python src/data/retrain_from_final.py
+    python -m src.data.retrain_from_final
 """
 
-import sys
 from pathlib import Path
 
 import joblib
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
+from src.utils.text_cleaning import clean_text
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 PROC = ROOT / "data" / "processed"
 MODELS = ROOT / "models"
 MODELS.mkdir(parents=True, exist_ok=True)
-
-sys.path.insert(0, str(ROOT))
-from src.utils.text_cleaning import clean_text  # noqa: E402
 
 csv_path = PROC / "movies_final.csv"
 print(f"Loading {csv_path} ...")

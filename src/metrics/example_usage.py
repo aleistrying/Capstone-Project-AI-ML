@@ -7,11 +7,12 @@ using the Evaluator class and predefined test scenarios.
 NOTE: This is a template. Adapt paths and ground-truth movie IDs based on your dataset.
 """
 
-from evaluator import Evaluator
-from test_data import print_test_scenarios, get_test_scenarios
-from recommender.recommender_engine import recommend_on_the_fly
 import pandas as pd
 import joblib
+
+from src.metrics.evaluator import Evaluator
+from src.metrics.test_data import print_test_scenarios
+from src.recommender.recommender_engine import recommend_on_the_fly
 
 
 def example_1_single_query_evaluation():
@@ -25,8 +26,8 @@ def example_1_single_query_evaluation():
         movies_df = pd.read_csv("../../data/movies_final.csv")
         vectorizer = joblib.load("../../models/tfidf_vectorizer.pkl")
         tfidf_matrix = joblib.load("../../models/tfidf_matrix.pkl")
-    except Exception as e:
-        print(f"Error loading files: {e}")
+    except (OSError, ValueError, EOFError) as exc:
+        print(f"Error loading files: {exc}")
         print("Make sure data files are in the correct location.")
         return
 
@@ -35,7 +36,7 @@ def example_1_single_query_evaluation():
         recommender_func=recommend_on_the_fly,
         movies_df=movies_df,
         vectorizer=vectorizer,
-        tfidf_matrix=tfidf_matrix
+        tfidf_matrix=tfidf_matrix,
     )
 
     # Evaluate a single query
@@ -47,7 +48,7 @@ def example_1_single_query_evaluation():
     print(f"\nUser Input: {user_input}")
     print(f"Recommended: {result['predicted_ids']}")
     print(f"Relevant:    {result['relevant_ids']}")
-    print(f"\nMetrics:")
+    print("\nMetrics:")
     print(f"  Precision: {result['precision']:.3f}")
     print(f"  Recall:    {result['recall']:.3f}")
     print(f"  Accuracy:  {result['accuracy']:.3f}")
@@ -66,8 +67,8 @@ def example_2_batch_evaluation():
         movies_df = pd.read_csv("../../data/movies_final.csv")
         vectorizer = joblib.load("../../models/tfidf_vectorizer.pkl")
         tfidf_matrix = joblib.load("../../models/tfidf_matrix.pkl")
-    except Exception as e:
-        print(f"Error loading files: {e}")
+    except (OSError, ValueError, EOFError) as exc:
+        print(f"Error loading files: {exc}")
         return
 
     # Create evaluator
@@ -75,7 +76,7 @@ def example_2_batch_evaluation():
         recommender_func=recommend_on_the_fly,
         movies_df=movies_df,
         vectorizer=vectorizer,
-        tfidf_matrix=tfidf_matrix
+        tfidf_matrix=tfidf_matrix,
     )
 
     # Evaluate all scenarios
@@ -108,8 +109,8 @@ def example_4_custom_evaluation():
         movies_df = pd.read_csv("../../data/movies_final.csv")
         vectorizer = joblib.load("../../models/tfidf_vectorizer.pkl")
         tfidf_matrix = joblib.load("../../models/tfidf_matrix.pkl")
-    except Exception as e:
-        print(f"Error loading files: {e}")
+    except (OSError, ValueError, EOFError) as exc:
+        print(f"Error loading files: {exc}")
         return
 
     # Create evaluator
@@ -117,7 +118,7 @@ def example_4_custom_evaluation():
         recommender_func=recommend_on_the_fly,
         movies_df=movies_df,
         vectorizer=vectorizer,
-        tfidf_matrix=tfidf_matrix
+        tfidf_matrix=tfidf_matrix,
     )
 
     # Define custom test cases
@@ -140,9 +141,7 @@ def example_4_custom_evaluation():
     results = []
     for i, test in enumerate(custom_tests, 1):
         result = evaluator.evaluate_single_query(
-            test["user_input"],
-            test["relevant_ids"],
-            top_n=5
+            test["user_input"], test["relevant_ids"], top_n=5
         )
         result["test_num"] = i
         results.append(result)

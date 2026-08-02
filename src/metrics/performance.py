@@ -36,6 +36,8 @@ Run:
 
 import gc
 import glob
+import importlib
+import resource
 import statistics
 import sys
 import time
@@ -44,12 +46,12 @@ from pathlib import Path
 
 import joblib
 import pandas as pd
+from scipy.sparse import load_npz
+
+from src.chatbot.chatbot_flow import initialize_conversation_state, run_pipeline
+from src.recommender.recommender_engine import recommend_on_the_fly
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(ROOT))
-
-from src.recommender.recommender_engine import recommend_on_the_fly
-from src.chatbot.chatbot_flow import run_pipeline, initialize_conversation_state
 
 # ---------------------------------------------------------------------------
 # Representative prompts (reused from the live benchmark style). English set is
@@ -93,7 +95,6 @@ def load_assets():
     vec = joblib.load(ROOT / "models" / "tfidf_vectorizer.pkl")
     npz = ROOT / "models" / "tfidf_matrix.npz"
     if npz.exists():
-        from scipy.sparse import load_npz
         mat = load_npz(str(npz))
     else:
         mat = joblib.load(ROOT / "models" / "tfidf_matrix.pkl")
@@ -119,8 +120,20 @@ def _percentile(sorted_vals, pct):
 def _summarize_ms(samples):
     """Turn a list of millisecond timings into a percentile summary dict."""
     if not samples:
-        return {k: 0.0 for k in
-                ("count", "mean", "median", "p90", "p95", "p99", "min", "max", "stdev")}
+        return {
+            k: 0.0
+            for k in (
+                "count",
+                "mean",
+                "median",
+                "p90",
+                "p95",
+                "p99",
+                "min",
+                "max",
+                "stdev",
+            )
+        }
     s = sorted(samples)
     return {
         "count": len(s),
@@ -148,14 +161,13 @@ def _time_call(fn, *args, **kwargs):
 def _peak_rss_mb():
     """Peak resident set size of THIS process, in MB. psutil optional."""
     try:
-        import psutil  # optional; do NOT add as a dependency
+        psutil = importlib.import_module("psutil")
         proc = psutil.Process()
         mem = proc.memory_info()
         # peak/high-water-mark if the platform exposes it, else current RSS.
         peak = getattr(mem, "peak_wset", None) or getattr(mem, "rss", 0)
         return peak / (1024 * 1024)
-    except Exception:
-        import resource
+    except ImportError:
         ru = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
         # Linux reports ru_maxrss in KB, macOS in bytes.
         if sys.platform == "darwin":
@@ -220,23 +232,28 @@ def run_performance_suite(
     Repetition counts are intentionally small/bounded (a few dozen calls per
     config) so the suite stays quick and light on the machine.
     """
+    # The coordinator retains samples and summaries for four measurement
+    # sections before returning one structured result.
+    # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
     if df is None or vec is None or mat is None:
         df, vec, mat, csv_name = load_assets()
     else:
         csv_name = "<provided>"
 
-    results = {"meta": {
-        "dataset": csv_name,
-        "n_movies": int(len(df)),
-        "matrix_shape": list(getattr(mat, "shape", (0, 0))),
-        "latency_reps": latency_reps,
-        "e2e_reps": e2e_reps,
-        "scale_reps": scale_reps,
-        "top_n_configs": list(top_n_configs),
-    }}
+    results = {
+        "meta": {
+            "dataset": csv_name,
+            "n_movies": int(len(df)),
+            "matrix_shape": list(getattr(mat, "shape", (0, 0))),
+            "latency_reps": latency_reps,
+            "e2e_reps": e2e_reps,
+            "scale_reps": scale_reps,
+            "top_n_configs": list(top_n_configs),
+        }
+    }
 
     # ── Warm up: first calls compile/allocate lazily; don't time those. ────────
-    for q in EN_QUERIES[:max(1, warmup)]:
+    for q in EN_QUERIES[: max(1, warmup)]:
         recommend_on_the_fly(q, df, vec, mat, top_n=5)
         run_pipeline(q, initialize_conversation_state(), df, vec, mat, top_n=5)
 
@@ -244,9 +261,7 @@ def run_performance_suite(
     lat_samples = []
     for i in range(latency_reps):
         q = EN_QUERIES[i % len(EN_QUERIES)]
-        lat_samples.append(
-            _time_call(recommend_on_the_fly, q, df, vec, mat, top_n=5)
-        )
+        lat_samples.append(_time_call(recommend_on_the_fly, q, df, vec, mat, top_n=5))
     results["latency_ms"] = _summarize_ms(lat_samples)
 
     # ── 2. End-to-end — full run_pipeline, EN and (optionally) ES. ─────────────
@@ -254,8 +269,9 @@ def run_performance_suite(
     for i in range(e2e_reps):
         q = EN_QUERIES[i % len(EN_QUERIES)]
         en_samples.append(
-            _time_call(run_pipeline, q, initialize_conversation_state(),
-                       df, vec, mat, top_n=5)
+            _time_call(
+                run_pipeline, q, initialize_conversation_state(), df, vec, mat, top_n=5
+            )
         )
     en_summary = _summarize_ms(en_samples)
 
@@ -268,14 +284,20 @@ def run_performance_suite(
         # mid-run. Warming EVERY ES prompt once ensures all such one-time model
         # loads happen OUTSIDE the timed samples (otherwise they blow up the tail).
         for q in ES_QUERIES:
-            run_pipeline(q, initialize_conversation_state(),
-                         df, vec, mat, top_n=5)
+            run_pipeline(q, initialize_conversation_state(), df, vec, mat, top_n=5)
         es_samples = []
         for i in range(e2e_reps):
             q = ES_QUERIES[i % len(ES_QUERIES)]
             es_samples.append(
-                _time_call(run_pipeline, q, initialize_conversation_state(),
-                           df, vec, mat, top_n=5)
+                _time_call(
+                    run_pipeline,
+                    q,
+                    initialize_conversation_state(),
+                    df,
+                    vec,
+                    mat,
+                    top_n=5,
+                )
             )
         es_summary = _summarize_ms(es_samples)
         overhead = es_summary["median"] - en_summary["median"]
@@ -291,8 +313,7 @@ def run_performance_suite(
 
     gc.collect()
     tracemalloc.start()
-    run_pipeline(EN_QUERIES[0], initialize_conversation_state(),
-                 df, vec, mat, top_n=5)
+    run_pipeline(EN_QUERIES[0], initialize_conversation_state(), df, vec, mat, top_n=5)
     _cur, tm_peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
 
@@ -310,9 +331,7 @@ def run_performance_suite(
         samples = []
         for i in range(scale_reps):
             q = EN_QUERIES[i % len(EN_QUERIES)]
-            samples.append(
-                _time_call(recommend_on_the_fly, q, df, vec, mat, top_n=tn)
-            )
+            samples.append(_time_call(recommend_on_the_fly, q, df, vec, mat, top_n=tn))
         total_s = sum(samples) / 1000.0
         by_top_n[tn] = {
             "latency_ms": _summarize_ms(samples),
@@ -337,9 +356,11 @@ def run_performance_suite(
 # Pretty printer for the CLI.
 # ---------------------------------------------------------------------------
 def _fmt_pctile(d):
-    return (f"mean {d['mean']:.1f}  median {d['median']:.1f}  "
-            f"p90 {d['p90']:.1f}  p95 {d['p95']:.1f}  p99 {d['p99']:.1f}  "
-            f"min {d['min']:.1f}  max {d['max']:.1f}  (n={d['count']})")
+    return (
+        f"mean {d['mean']:.1f}  median {d['median']:.1f}  "
+        f"p90 {d['p90']:.1f}  p95 {d['p95']:.1f}  p99 {d['p99']:.1f}  "
+        f"min {d['min']:.1f}  max {d['max']:.1f}  (n={d['count']})"
+    )
 
 
 def print_report(results):
@@ -362,8 +383,10 @@ def print_report(results):
     print(f"   EN : {_fmt_pctile(e2e['en'])}")
     if e2e["es"] is not None:
         print(f"   ES : {_fmt_pctile(e2e['es'])}")
-        print(f"   Translation overhead (ES median - EN median): "
-              f"{e2e['translation_overhead_ms']:.1f} ms")
+        print(
+            f"   Translation overhead (ES median - EN median): "
+            f"{e2e['translation_overhead_ms']:.1f} ms"
+        )
     else:
         print("   ES : (skipped)")
     print()
@@ -372,18 +395,22 @@ def print_report(results):
     fp = mem["model_footprint"]
     print("3. MEMORY USAGE")
     print(f"   Peak process RSS      : {mem['peak_rss_mb']:.1f} MB")
-    print(f"   TF-IDF matrix in-mem  : {fp['matrix_mb']:.1f} MB "
-          f"(nnz={fp['matrix_nnz']:,}, shape={fp['matrix_shape'][0]:,}"
-          f"x{fp['matrix_shape'][1]:,})")
+    print(
+        f"   TF-IDF matrix in-mem  : {fp['matrix_mb']:.1f} MB "
+        f"(nnz={fp['matrix_nnz']:,}, shape={fp['matrix_shape'][0]:,}"
+        f"x{fp['matrix_shape'][1]:,})"
+    )
     print(f"   Vocabulary size       : {mem['vocab_size']:,} terms")
     print(f"   tracemalloc peak (1 pipeline call): {mem['tracemalloc_peak_mb']:.1f} MB")
     print()
 
     scale = results["scalability"]
     print("4. SCALABILITY / THROUGHPUT")
-    print(f"   Sequential QPS (top_n={meta['top_n_configs'][0]}): "
-          f"{scale['qps']:.1f} queries/s  "
-          f"({scale['n_queries']} queries in {scale['total_time_s']:.2f}s)")
+    print(
+        f"   Sequential QPS (top_n={meta['top_n_configs'][0]}): "
+        f"{scale['qps']:.1f} queries/s  "
+        f"({scale['n_queries']} queries in {scale['total_time_s']:.2f}s)"
+    )
     print("   Latency & QPS by top_n:")
     print(f"     {'top_n':>6} {'mean ms':>9} {'p95 ms':>8} {'qps':>8}")
     for tn, d in scale["by_top_n"].items():
