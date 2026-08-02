@@ -44,7 +44,8 @@ PUBLIC API (functions you call from outside this module)
   translate_from_english(text, tgt_lang) → str
 """
 
-import os
+from pathlib import Path
+
 import torch
 from transformers import MarianMTModel, MarianTokenizer
 
@@ -67,12 +68,23 @@ SUPPORTED_PAIRS = {
     ("en", "it"): "Helsinki-NLP/opus-mt-en-it",
 }
 
+# Immutable Hub revisions recorded during the August 2, 2026 security review.
+MODEL_REVISIONS = {
+    "Helsinki-NLP/opus-mt-es-en": "c96e2c5399ebfae4fc43d9669556b9afa74bb69d",
+    "Helsinki-NLP/opus-mt-en-es": "5bc4493d463cf000c1f0b50f8d56886a392ed4ab",
+    "Helsinki-NLP/opus-mt-fr-en": "c4aed37b318c763fd177aa449b44e3b783cc6c02",
+    "Helsinki-NLP/opus-mt-en-fr": "dd7f6540a7a48a7f4db59e5c0b9c42c8eea67f18",
+    "Helsinki-NLP/opus-mt-ROMANCE-en": "e9ca9975e3972afd80732f08ce01d3a1339f47f8",
+    "Helsinki-NLP/opus-mt-en-ROMANCE": "f8f3a28e8b6272d0ccc0290b832f699e154ae431",
+    "Helsinki-NLP/opus-mt-de-en": "1a922f3b32a8e809e17a47d4b32142d8105924e5",
+    "Helsinki-NLP/opus-mt-en-de": "6183067f769a302e3861815543b9f312c71b0ca4",
+    "Helsinki-NLP/opus-mt-it-en": "42556a0848fc726f4d27399f20b19ff6f01afe11",
+    "Helsinki-NLP/opus-mt-en-it": "be5a254d936f1a8c8da080406ca582a6615e6658",
+}
+
 # Path where fine_tune.py saves domain-adapted models.
 # Structure: models/translation/es-en/  models/translation/en-es/  etc.
-_BASE_DIR = os.path.dirname(__file__)
-FINETUNED_DIR = os.path.normpath(
-    os.path.join(_BASE_DIR, "..", "..", "models", "translation")
-)
+FINETUNED_DIR = Path(__file__).resolve().parents[2] / "models" / "translation"
 
 # In-memory cache: avoids reloading the same model twice in one session.
 # Key: "es-en" string. Value: (tokenizer, model) tuple.
@@ -101,19 +113,26 @@ def _load_model(src: str, tgt: str):
         return _model_cache[key]
 
     # Use the fine-tuned model if it was produced by fine_tune.py
-    finetuned_path = os.path.join(FINETUNED_DIR, key)
-    model_path: str | None
-    if os.path.exists(finetuned_path) and os.listdir(finetuned_path):
+    finetuned_path = FINETUNED_DIR / key
+    model_path: str | Path | None
+    revision: str | None = None
+    if finetuned_path.exists() and any(finetuned_path.iterdir()):
         model_path = finetuned_path
         print(f"[Translator] Loading fine-tuned model: {key}")
     else:
         model_path = SUPPORTED_PAIRS.get((src, tgt))
         if not model_path:
             raise ValueError(f"No translation model available for {src} → {tgt}")
+        revision = MODEL_REVISIONS[model_path]
         print(f"[Translator] Loading base model from HuggingFace: {model_path}")
 
-    tokenizer = MarianTokenizer.from_pretrained(model_path)
-    model = MarianMTModel.from_pretrained(model_path)
+    if revision is None:
+        # This branch only loads a fine-tuned model from a validated local path.
+        tokenizer = MarianTokenizer.from_pretrained(model_path)  # nosec B615
+        model = MarianMTModel.from_pretrained(model_path)  # nosec B615
+    else:
+        tokenizer = MarianTokenizer.from_pretrained(model_path, revision=revision)
+        model = MarianMTModel.from_pretrained(model_path, revision=revision)
     model.eval()  # disable dropout — we are doing inference, not training
 
     _model_cache[key] = (tokenizer, model)

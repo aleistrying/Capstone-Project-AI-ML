@@ -86,8 +86,10 @@ def build_matrix() -> None:
     # Round-trip check: the deploy branch has no .pkl to fall back on, so a
     # corrupt .npz would be an outage rather than a degraded mode.
     reloaded = load_npz(str(dst))
-    assert reloaded.shape == matrix.shape, "shape changed on round-trip"
-    assert reloaded.nnz == matrix.nnz, "nnz changed on round-trip"
+    if reloaded.shape != matrix.shape:
+        raise RuntimeError("matrix shape changed on round-trip")
+    if reloaded.nnz != matrix.nnz:
+        raise RuntimeError("matrix nonzero count changed on round-trip")
     print("Round-trip verified ✓")
 
 

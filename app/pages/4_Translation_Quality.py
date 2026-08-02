@@ -77,9 +77,9 @@ if st.button("Export human-eval template CSV"):
     path = export_human_eval_template(str(out))
     st.success(f"Template written to `{path}`")
     try:
-        st.code(Path(path).read_text()[:2000])
-    except Exception:
-        pass
+        st.code(Path(path).read_text(encoding="utf-8")[:2000])
+    except OSError as exc:
+        st.warning(f"Template was created, but its preview could not be read: {exc}")
 
 with st.expander("Raw BLEU result (full dict)"):
     st.json(result)

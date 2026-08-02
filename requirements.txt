@@ -29,6 +29,9 @@ scipy
 # Parquet engine for data/processed/movies_final.parquet
 pyarrow
 
+# Runtime validation of movie DataFrames and model artifacts
+pandera
+
 # NLP
 nltk
 
@@ -41,12 +44,8 @@ pydantic
 streamlit
 
 # Utilities
-rapidfuzz
-requests
+typing_extensions
 
 # Language identification — pure Python, no model download, so the app can still
 # report which language it detected even with translation disabled.
 langdetect
-
-# Testing
-pytest

@@ -47,8 +47,9 @@ TRAINING DETAILS
   - GPU:           Automatically used if available (fp16 enabled)
 """
 
-import os
 import argparse
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import torch
@@ -63,11 +64,10 @@ from transformers import (
 from datasets import Dataset
 import evaluate
 
+from src.translation.translator import MODEL_REVISIONS
+
 # Where to save the fine-tuned models
-_BASE_DIR = os.path.dirname(__file__)
-SAVE_DIR = os.path.normpath(
-    os.path.join(_BASE_DIR, "..", "..", "models", "translation")
-)
+SAVE_DIR = Path(__file__).resolve().parents[2] / "models" / "translation"
 
 # ─────────────────────────────────────────────
 # Built-in movie-domain parallel corpus (EN-ES)
@@ -216,7 +216,7 @@ SAMPLE_DATA = [
 
 def load_data(csv_path: str = None) -> list:
     """Loads parallel data from CSV or returns built-in sample data."""
-    if csv_path and os.path.exists(csv_path):
+    if csv_path and Path(csv_path).exists():
         df = pd.read_csv(csv_path)
         if "en" not in df.columns or "es" not in df.columns:
             raise ValueError("CSV must have columns named 'en' and 'es'")
@@ -284,8 +284,8 @@ def fine_tune(
         Path where the fine-tuned model was saved.
     """
     base_model_id = f"Helsinki-NLP/opus-mt-{src_lang}-{tgt_lang}"
-    save_path = os.path.join(SAVE_DIR, f"{src_lang}-{tgt_lang}")
-    os.makedirs(save_path, exist_ok=True)
+    save_path = SAVE_DIR / f"{src_lang}-{tgt_lang}"
+    save_path.mkdir(parents=True, exist_ok=True)
 
     # ── Load base model ──────────────────────────────────────────────
     print(f"\n{'='*55}")
@@ -293,8 +293,11 @@ def fine_tune(
     print(f"  Save path  : {save_path}")
     print(f"{'='*55}\n")
 
-    tokenizer = MarianTokenizer.from_pretrained(base_model_id)
-    model = MarianMTModel.from_pretrained(base_model_id)
+    revision = MODEL_REVISIONS.get(base_model_id)
+    if revision is None:
+        raise ValueError(f"No reviewed model revision configured for {base_model_id}")
+    tokenizer = MarianTokenizer.from_pretrained(base_model_id, revision=revision)
+    model = MarianMTModel.from_pretrained(base_model_id, revision=revision)
 
     # ── Load data ────────────────────────────────────────────────────
     data = load_data(csv_path)
@@ -329,7 +332,7 @@ def fine_tune(
         save_strategy="epoch",
         load_best_model_at_end=True,
         predict_with_generate=True,
-        logging_dir=os.path.join(save_path, "logs"),
+        logging_dir=save_path / "logs",
         logging_steps=5,
         report_to="none",
         fp16=torch.cuda.is_available(),
