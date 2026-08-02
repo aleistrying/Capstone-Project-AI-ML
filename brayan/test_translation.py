@@ -9,7 +9,7 @@ Run a single test:
     pytest brayan/test_translation.py::test_detect_spanish -v
 """
 
-import os
+from pathlib import Path
 
 from src.translation.lang_detector import detect_language
 from src.translation.translator import (
@@ -208,9 +208,7 @@ class TestFineTunedModel:
 
     def test_finetuned_model_path_structure(self):
         """Check that the models/translation directory exists after fine-tuning."""
-        models_dir = os.path.normpath(
-            os.path.join(os.path.dirname(__file__), "..", "models", "translation")
-        )
+        models_dir = Path(__file__).parent.parent / "models" / "translation"
         # This passes before training (dir may not exist yet) — just validate the path
         assert "models" in models_dir and "translation" in models_dir
 

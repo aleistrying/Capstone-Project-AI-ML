@@ -183,18 +183,18 @@ def _apply_form_data(prefs: Preferences, form_data: FormFilters | None) -> None:
     """
     if not form_data:
         return
-    if form_data.get("genre") and not prefs.get("genres"):
-        prefs["genres"] = [form_data["genre"]]
-    if form_data.get("mood") and not prefs.get("mood"):
-        prefs["mood"] = [form_data["mood"]]
     if form_data.get("year_range") and not prefs.get("year_range"):
         prefs["year_range"] = form_data["year_range"]
     if form_data.get("language") and not prefs.get("language"):
         prefs["language"] = form_data["language"]
-    if form_data.get("min_rating") and not prefs.get("min_rating"):
-        prefs["min_rating"] = float(form_data["min_rating"])
     if form_data.get("similar_to") and not prefs.get("similar_to"):
         prefs["similar_to"] = form_data["similar_to"]
+    if form_data.get("genre") and not prefs.get("genres"):
+        prefs["genres"] = [form_data["genre"]]
+    if form_data.get("mood") and not prefs.get("mood"):
+        prefs["mood"] = [form_data["mood"]]
+    if form_data.get("min_rating") and not prefs.get("min_rating"):
+        prefs["min_rating"] = float(form_data["min_rating"])
 
 
 def _parse_genres(raw) -> list[str]:

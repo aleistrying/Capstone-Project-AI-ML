@@ -17,8 +17,8 @@ DISPLAY_COLUMNS = (
 VALID_YEAR_MODES = {"filter", "soft"}
 
 
-def _validate_inputs(movies_df, tfidf_matrix, top_n, year_mode, year_decay):
-    """Reject invalid model/data combinations with actionable messages."""
+def _validate_dataset(movies_df, tfidf_matrix):
+    """Reject incompatible dataset and matrix schemas."""
     missing = [column for column in DISPLAY_COLUMNS if column not in movies_df.columns]
     if missing:
         raise ValueError(f"movies_df is missing required columns: {', '.join(missing)}")
@@ -29,12 +29,22 @@ def _validate_inputs(movies_df, tfidf_matrix, top_n, year_mode, year_decay):
             "tfidf_matrix row count must match movies_df: "
             f"{tfidf_matrix.shape[0]} != {len(movies_df)}"
         )
+
+
+def _validate_options(top_n, year_mode, year_decay):
+    """Reject unsupported ranking parameters."""
     if not isinstance(top_n, int) or isinstance(top_n, bool) or top_n <= 0:
         raise ValueError("top_n must be a positive integer")
     if year_mode not in VALID_YEAR_MODES:
         raise ValueError(f"year_mode must be one of {sorted(VALID_YEAR_MODES)}")
     if not 0 <= year_decay <= 1:
         raise ValueError("year_decay must be between 0 and 1")
+
+
+def _validate_inputs(movies_df, tfidf_matrix, top_n, year_mode, year_decay):
+    """Validate all model, data, and ranking inputs."""
+    _validate_dataset(movies_df, tfidf_matrix)
+    _validate_options(top_n, year_mode, year_decay)
 
 
 def _build_scored_frame(movies_df, similarity_scores):

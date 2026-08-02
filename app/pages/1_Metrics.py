@@ -82,19 +82,18 @@ if st.button("▶ Run all scenarios", type="primary"):
 
     # ── Per-scenario table ────────────────────────────────────────────────────
     st.subheader("Per-Scenario Results")
-    rows = []
-    for r in results:
-        rows.append(
-            {
-                "Scenario": r.get("scenario_id", ""),
-                "Description": r.get("scenario_description", ""),
-                "Precision": round(r["precision"], 3),
-                "Recall": round(r["recall"], 3),
-                "F1": round(r["f1_score"], 3),
-                "MRR": round(r["mrr"], 3),
-                "Accuracy": round(r["accuracy"], 3),
-            }
-        )
+    rows = [
+        {
+            "Scenario": result.get("scenario_id", ""),
+            "Description": result.get("scenario_description", ""),
+            "Precision": round(result["precision"], 3),
+            "Recall": round(result["recall"], 3),
+            "F1": round(result["f1_score"], 3),
+            "MRR": round(result["mrr"], 3),
+            "Accuracy": round(result["accuracy"], 3),
+        }
+        for result in results
+    ]
     df_results = pd.DataFrame(rows)
     st.dataframe(df_results, use_container_width=True, hide_index=True)
 

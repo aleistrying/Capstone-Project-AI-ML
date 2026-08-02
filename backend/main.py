@@ -106,19 +106,18 @@ def handle_user_message(
         form_data=form_data,
     )
 
-    recommendations = []
-    for r in trace.recommendations:
-        recommendations.append(
-            {
-                "title": r["title"],
-                "year": r["year"],
-                "genres": r["genres"],
-                "rating": _safe_rating(r["rating"]),
-                "score": round(float(r["similarity"]), 4),
-                "poster_url": r.get("poster_url"),
-                "explanation": r["explanation"],
-            }
-        )
+    recommendations = [
+        {
+            "title": recommendation["title"],
+            "year": recommendation["year"],
+            "genres": recommendation["genres"],
+            "rating": _safe_rating(recommendation["rating"]),
+            "score": round(float(recommendation["similarity"]), 4),
+            "poster_url": recommendation.get("poster_url"),
+            "explanation": recommendation["explanation"],
+        }
+        for recommendation in trace.recommendations
+    ]
 
     return {
         "detected_language": trace.ui_language,

@@ -25,6 +25,7 @@ metrics module stays free of the optional translation dependencies.
 """
 
 import csv
+from pathlib import Path
 
 from src.nlp.keyword_extractor import build_genre_vocabulary, build_query
 from src.nlp.nlp_preferences import extract_preferences
@@ -304,7 +305,7 @@ class Evaluator:
             "mrr",
         ]
 
-        with open(filename, "w", newline="", encoding="utf-8") as f:
+        with Path(filename).open("w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=keys)
             writer.writeheader()
 

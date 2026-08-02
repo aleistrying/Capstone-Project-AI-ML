@@ -19,7 +19,6 @@ Run:
     python -m src.metrics.benchmark
 """
 
-import glob
 from pathlib import Path
 
 import joblib
@@ -72,7 +71,7 @@ BENCHMARK = [
 
 def load_assets():
     """Load dataset + TF-IDF vectorizer/matrix from the standard project paths."""
-    csv = glob.glob(str(ROOT / "data" / "processed" / "*.csv"))[0]
+    csv = next((ROOT / "data" / "processed").glob("*.csv"))
     df = pd.read_csv(csv)
     vec = joblib.load(ROOT / "models" / "tfidf_vectorizer.pkl")
     npz = ROOT / "models" / "tfidf_matrix.npz"

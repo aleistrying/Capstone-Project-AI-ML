@@ -35,7 +35,6 @@ Run:
 """
 
 import gc
-import glob
 import importlib
 import resource
 import statistics
@@ -90,7 +89,7 @@ ES_QUERIES = [
 # ---------------------------------------------------------------------------
 def load_assets():
     """Load dataset + TF-IDF vectorizer/matrix from the standard project paths."""
-    csv = glob.glob(str(ROOT / "data" / "processed" / "*.csv"))[0]
+    csv = next((ROOT / "data" / "processed").glob("*.csv"))
     df = pd.read_csv(csv)
     vec = joblib.load(ROOT / "models" / "tfidf_vectorizer.pkl")
     npz = ROOT / "models" / "tfidf_matrix.npz"
@@ -120,9 +119,8 @@ def _percentile(sorted_vals, pct):
 def _summarize_ms(samples):
     """Turn a list of millisecond timings into a percentile summary dict."""
     if not samples:
-        return {
-            k: 0.0
-            for k in (
+        return dict.fromkeys(
+            (
                 "count",
                 "mean",
                 "median",
@@ -132,8 +130,9 @@ def _summarize_ms(samples):
                 "min",
                 "max",
                 "stdev",
-            )
-        }
+            ),
+            0.0,
+        )
     s = sorted(samples)
     return {
         "count": len(s),

@@ -78,11 +78,13 @@ def _render_card(rec: dict, index: int) -> None:
         rating = rec.get("rating")
         if rating is not None:
             try:
-                title_line += (
-                    f' <span class="cine-rating">⭐ {float(rating):.1f}</span>'
-                )
+                formatted_rating = float(rating)
             except (TypeError, ValueError):
-                pass
+                formatted_rating = None
+            if formatted_rating is not None:
+                title_line += (
+                    f' <span class="cine-rating">⭐ {formatted_rating:.1f}</span>'
+                )
         st.markdown(title_line, unsafe_allow_html=True)
 
         genres = rec.get("genres") or []

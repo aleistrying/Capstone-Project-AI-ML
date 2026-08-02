@@ -68,9 +68,9 @@ import csv
 import importlib
 import importlib.util
 import itertools
-import os
 import statistics
 import tempfile
+from pathlib import Path
 
 from src.metrics.translation_eval_data import (
     all_directions,
@@ -383,15 +383,17 @@ def export_human_eval_template(
                 "mt_output": (mt or "").strip(),
             }
             if raters:
-                for r in raters:
-                    rows.append(
+                rows.extend(
+                    [
                         {
                             **base,
                             "human_adequacy_1to5": "",
                             "human_fluency_1to5": "",
-                            "rater": r,
+                            "rater": rater,
                         }
-                    )
+                        for rater in raters
+                    ]
+                )
             else:
                 rows.append(
                     {
@@ -402,8 +404,9 @@ def export_human_eval_template(
                     }
                 )
 
-    os.makedirs(os.path.dirname(os.path.abspath(csv_path)) or ".", exist_ok=True)
-    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+    output_path = Path(csv_path).resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=HUMAN_EVAL_FIELDS)
         writer.writeheader()
         writer.writerows(rows)
@@ -477,12 +480,71 @@ def _write_sample_human_eval(csv_path: str) -> str:
             "rater": "rater_b",
         },
     ]
-    os.makedirs(os.path.dirname(os.path.abspath(csv_path)) or ".", exist_ok=True)
-    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+    output_path = Path(csv_path).resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=HUMAN_EVAL_FIELDS)
         writer.writeheader()
         writer.writerows(sample)
     return csv_path
+
+
+def _read_human_scores(csv_path: str) -> list[dict]:
+    """Read complete human-evaluation rows and coerce their numeric scores."""
+    rows = []
+    with Path(csv_path).open(newline="", encoding="utf-8") as source:
+        for row in csv.DictReader(source):
+            try:
+                adequacy = float(row.get("human_adequacy_1to5", ""))
+                fluency = float(row.get("human_fluency_1to5", ""))
+            except (TypeError, ValueError):
+                continue
+            rows.append(
+                {
+                    "id": row.get("id", ""),
+                    "direction": row.get("direction", ""),
+                    "rater": row.get("rater", ""),
+                    "adequacy": adequacy,
+                    "fluency": fluency,
+                }
+            )
+    return rows
+
+
+def _scores_by_direction(rows: list[dict]) -> dict:
+    """Aggregate mean scores for each translation direction."""
+    result = {}
+    for direction in sorted({row["direction"] for row in rows}):
+        subset = [row for row in rows if row["direction"] == direction]
+        result[direction] = {
+            "adequacy": round(statistics.mean(row["adequacy"] for row in subset), 3),
+            "fluency": round(statistics.mean(row["fluency"] for row in subset), 3),
+            "n": len(subset),
+        }
+    return result
+
+
+def _inter_rater_summary(rows: list[dict], raters: list[str]) -> dict | None:
+    """Calculate mean absolute differences for overlapping rater pairs."""
+    if len(raters) < 2:
+        return None
+    by_item = {}
+    for row in rows:
+        by_item.setdefault(row["id"], {})[row["rater"]] = row
+    adequacy_diffs, fluency_diffs = [], []
+    for per_rater in by_item.values():
+        present = [rater for rater in raters if rater in per_rater]
+        for first, second in itertools.combinations(present, 2):
+            score_a, score_b = per_rater[first], per_rater[second]
+            adequacy_diffs.append(abs(score_a["adequacy"] - score_b["adequacy"]))
+            fluency_diffs.append(abs(score_a["fluency"] - score_b["fluency"]))
+    if not adequacy_diffs:
+        return None
+    return {
+        "adequacy_mean_abs_diff": round(statistics.mean(adequacy_diffs), 3),
+        "fluency_mean_abs_diff": round(statistics.mean(fluency_diffs), 3),
+        "pairs_compared": len(adequacy_diffs),
+    }
 
 
 def aggregate_human_scores(csv_path: str) -> dict:
@@ -511,30 +573,7 @@ def aggregate_human_scores(csv_path: str) -> dict:
                               "pairs_compared"} or None if <2 raters overlap
     """
 
-    # One small schema is parsed, grouped, and compared in this coordinator.
-    # pylint: disable=too-many-locals
-    def _num(v):
-        try:
-            return float(v)
-        except (TypeError, ValueError):
-            return None
-
-    rows = []
-    with open(csv_path, newline="", encoding="utf-8") as f:
-        for r in csv.DictReader(f):
-            a = _num(r.get("human_adequacy_1to5"))
-            fl = _num(r.get("human_fluency_1to5"))
-            if a is None or fl is None:
-                continue  # skip unscored rows
-            rows.append(
-                {
-                    "id": r.get("id", ""),
-                    "direction": r.get("direction", ""),
-                    "rater": r.get("rater", ""),
-                    "adequacy": a,
-                    "fluency": fl,
-                }
-            )
+    rows = _read_human_scores(csv_path)
 
     if not rows:
         return {
@@ -550,46 +589,13 @@ def aggregate_human_scores(csv_path: str) -> dict:
         "fluency": round(statistics.mean(r["fluency"] for r in rows), 3),
     }
 
-    per_direction = {}
-    directions = sorted({r["direction"] for r in rows})
-    for d in directions:
-        subset = [r for r in rows if r["direction"] == d]
-        per_direction[d] = {
-            "adequacy": round(statistics.mean(r["adequacy"] for r in subset), 3),
-            "fluency": round(statistics.mean(r["fluency"] for r in subset), 3),
-            "n": len(subset),
-        }
-
     raters = sorted({r["rater"] for r in rows if r["rater"]})
-
-    # Inter-rater agreement: mean absolute difference on shared items.
-    inter_rater = None
-    if len(raters) >= 2:
-        # index scores by (id, rater)
-        by_item = {}
-        for r in rows:
-            by_item.setdefault(r["id"], {})[r["rater"]] = r
-        adiffs, fdiffs = [], []
-        for per_rater in by_item.values():
-            present = [rt for rt in raters if rt in per_rater]
-            # compare every unordered pair of raters on this item
-            for first, second in itertools.combinations(present, 2):
-                score_a, score_b = per_rater[first], per_rater[second]
-                adiffs.append(abs(score_a["adequacy"] - score_b["adequacy"]))
-                fdiffs.append(abs(score_a["fluency"] - score_b["fluency"]))
-        if adiffs:
-            inter_rater = {
-                "adequacy_mean_abs_diff": round(statistics.mean(adiffs), 3),
-                "fluency_mean_abs_diff": round(statistics.mean(fdiffs), 3),
-                "pairs_compared": len(adiffs),
-            }
-
     return {
         "n_ratings": len(rows),
         "raters": raters,
         "overall": overall,
-        "per_direction": per_direction,
-        "inter_rater": inter_rater,
+        "per_direction": _scores_by_direction(rows),
+        "inter_rater": _inter_rater_summary(rows, raters),
     }
 
 
@@ -654,8 +660,8 @@ def main():
         )
 
     # Human-eval scaffold demo — always runnable.
-    out_dir = tempfile.mkdtemp(prefix="cineassist_human_eval_")
-    sample_path = os.path.join(out_dir, "human_eval_sample_filled.csv")
+    out_dir = Path(tempfile.mkdtemp(prefix="cineassist_human_eval_"))
+    sample_path = out_dir / "human_eval_sample_filled.csv"
     _write_sample_human_eval(sample_path)
     agg_human = aggregate_human_scores(sample_path)
 
@@ -673,7 +679,7 @@ def main():
 
     # Also export a BLANK template pre-filled with base-model output IF deps ok.
     if not err:
-        blank_path = os.path.join(out_dir, "human_eval_template_blank.csv")
+        blank_path = out_dir / "human_eval_template_blank.csv"
         try:
             export_human_eval_template(blank_path)
             print(
