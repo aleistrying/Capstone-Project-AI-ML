@@ -387,7 +387,7 @@ pip install -r requirements.txt
 Run the preprocessing script — it downloads the datasets automatically and builds the TF-IDF models:
 
 ```bash
-python src/data/preprocess.py
+python -m src.data.preprocess
 ```
 
 This downloads TMDB 5000 + MovieLens from public sources, merges them, stems the text, fits the TF-IDF vectorizer, and writes:
@@ -511,8 +511,8 @@ The `src/metrics/` module provides `Evaluator`, `calculate_precision`, `calculat
 
 **CLI runner:**
 ```bash
-python src/metrics/setup_and_run.py           # run all 10 scenarios, print table
-python src/metrics/setup_and_run.py --explore  # print dataset summary + top movies by genre
+python -m src.metrics.setup_and_run           # run all 10 scenarios, print table
+python -m src.metrics.setup_and_run --explore # print dataset summary + top movies by genre
 ```
 
 **Streamlit Metrics page:** Launch the app and navigate to **📊 Metrics** in the sidebar — runs all scenarios interactively, shows bar charts, per-scenario detail, and a CSV download.
@@ -554,6 +554,32 @@ Metrics tracked: **Precision@5**, **Recall@5**, **F1**, **MRR**, **Accuracy**.
 | UI              | Streamlit                                                         |
 | Evaluation      | Custom precision/recall/MRR/F1 harness, sacrebleu (BLEU score)   |
 | Version Control | GitHub + GitHub Projects                                          |
+
+---
+
+## Code quality
+
+Install the reproducible development toolchain separately from the runtime
+dependencies:
+
+```bash
+python -m pip install -r requirements-dev.txt
+```
+
+Run the same checks used by CI from the repository root:
+
+```bash
+python -m black --check src backend app tests brayan scripts app.py
+python -m flake8 src backend app tests brayan scripts app.py
+python -m pylint src backend app tests scripts app.py --score=y
+python -m mypy src/contracts.py src/chatbot src/nlp src/recommender backend
+python -m pytest --cov=src.chatbot --cov=src.nlp --cov=src.recommender
+```
+
+Black and Flake8 share an 88-character policy. Black owns physical line
+wrapping; Flake8 focuses on correctness findings that formatting cannot repair.
+The labelled metrics fixture and the Word-report generator contain narrow,
+documented Pylint exceptions for their intentionally unusual structure.
 
 ---
 
