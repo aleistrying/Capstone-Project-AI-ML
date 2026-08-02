@@ -29,20 +29,26 @@ Translation degrades gracefully: if the ML translation deps/models are not
 available, the pipeline runs in English-only mode instead of crashing.
 """
 
-import sys
-import os
 import ast
+import logging
+import weakref
 from dataclasses import dataclass, field
+from typing import NamedTuple
 
 import pandas as pd
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from src.nlp.nlp_preferences import extract_preferences
 from src.nlp.keyword_extractor import build_genre_vocabulary, build_query
 from src.utils.explanation_generator import generate_explanation
 from src.recommender.recommender_engine import recommend_on_the_fly
 from src.utils.text_cleaning import clean_text
+from src.contracts import (
+    ConversationState,
+    FormFilters,
+    Preferences,
+    RecommendationCard,
+    RecommenderFilters,
+)
 
 # --- Translation layer (Brayan). Imported defensively: torch/transformers/
 # langdetect may be missing in some environments, and MarianMT models download
@@ -53,26 +59,42 @@ try:
         translate_to_english as _translate_to_english,
         translate_from_english as _translate_from_english,
     )
+
     _TRANSLATION_AVAILABLE = True
-except Exception:  # missing deps, etc.
+except ImportError:  # optional translation dependencies are not installed
     _TRANSLATION_AVAILABLE = False
 
 try:
     from backend.services.language_service import normalize as _domain_normalize
+
     _DOMAIN_AVAILABLE = True
-except Exception:
+except ImportError:
     _DOMAIN_AVAILABLE = False
 
-# Genre vocabulary is derived once from the dataset and reused across turns.
-_GENRE_VOCAB: set[str] | None = None
+LOGGER = logging.getLogger(__name__)
+
+
+class _GenreVocabularyCache:
+    """Cache a vocabulary while its source DataFrame remains alive."""
+
+    def __init__(self):
+        self._source_ref = None
+        self._vocabulary: set[str] = set()
+
+    def get(self, movies_df) -> set[str]:
+        """Return a cached vocabulary only when the DataFrame is identical."""
+        if self._source_ref is None or self._source_ref() is not movies_df:
+            self._vocabulary = build_genre_vocabulary(movies_df)
+            self._source_ref = weakref.ref(movies_df)
+        return self._vocabulary
+
+
+_GENRE_CACHE = _GenreVocabularyCache()
 
 
 def _get_genre_vocab(movies_df) -> set[str]:
-    """Lazily build and cache the dataset genre vocabulary (used by build_query)."""
-    global _GENRE_VOCAB
-    if _GENRE_VOCAB is None:
-        _GENRE_VOCAB = build_genre_vocabulary(movies_df)
-    return _GENRE_VOCAB
+    """Build each dataset's genre vocabulary at most once while it is alive."""
+    return _GENRE_CACHE.get(movies_df)
 
 
 # Below this top similarity score we treat the result set as broadened/low-confidence.
@@ -88,16 +110,20 @@ _GREETING = (
 # Translation helpers — all safe no-ops when translation is unavailable.
 # ---------------------------------------------------------------------------
 
+
 def _safe_domain_normalize(text: str) -> dict:
     """Domain vocabulary mapping + stopword language detection (no heavy deps)."""
     if _DOMAIN_AVAILABLE:
         try:
             return _domain_normalize(text)
-        except Exception:
-            pass
+        except (TypeError, ValueError, RuntimeError) as exc:
+            LOGGER.warning("Domain normalization failed; using defaults: %s", exc)
     return {
-        "detected_language": "en", "mapped_genres": [], "mapped_moods": [],
-        "mapped_year_range": None, "mapped_language": None,
+        "detected_language": "en",
+        "mapped_genres": [],
+        "mapped_moods": [],
+        "mapped_year_range": None,
+        "mapped_language": None,
     }
 
 
@@ -107,7 +133,8 @@ def _detect_ui_language(text: str, domain: dict) -> str:
         return domain.get("detected_language", "en")
     try:
         lang_ngram = _detect_language(text)
-    except Exception:
+    except (TypeError, ValueError, RuntimeError) as exc:
+        LOGGER.warning("Language detection failed; defaulting to English: %s", exc)
         lang_ngram = "en"
     return lang_ngram if lang_ngram != "en" else domain.get("detected_language", "en")
 
@@ -118,7 +145,8 @@ def _to_english(text: str, ui_lang: str) -> str:
         return text
     try:
         return _translate_to_english(text, ui_lang)
-    except Exception:
+    except (TypeError, ValueError, RuntimeError, OSError) as exc:
+        LOGGER.warning("Input translation failed; using original text: %s", exc)
         return text
 
 
@@ -128,11 +156,12 @@ def _from_english(text: str, ui_lang: str) -> str:
         return text
     try:
         return _translate_from_english(text, ui_lang)
-    except Exception:
+    except (TypeError, ValueError, RuntimeError, OSError) as exc:
+        LOGGER.warning("Output translation failed; using English text: %s", exc)
         return text
 
 
-def _fill_pref_gaps(prefs: dict, domain: dict) -> None:
+def _fill_pref_gaps(prefs: Preferences, domain: dict) -> None:
     """Fill preference gaps with domain-vocabulary mappings from the original text."""
     if not prefs.get("genres") and domain.get("mapped_genres"):
         prefs["genres"] = domain["mapped_genres"]
@@ -144,7 +173,7 @@ def _fill_pref_gaps(prefs: dict, domain: dict) -> None:
         prefs["language"] = domain["mapped_language"]
 
 
-def _apply_form_data(prefs: dict, form_data: dict | None) -> None:
+def _apply_form_data(prefs: Preferences, form_data: FormFilters | None) -> None:
     """
     Overlay optional structured starter-question answers onto extracted prefs.
 
@@ -169,7 +198,7 @@ def _apply_form_data(prefs: dict, form_data: dict | None) -> None:
 
 
 def _parse_genres(raw) -> list[str]:
-    """Normalize the genres_list field (a stringified list or a real list) to list[str]."""
+    """Normalize a stringified or real genres list to a list of strings."""
     if isinstance(raw, list):
         return [str(g) for g in raw]
     if isinstance(raw, str) and raw.strip():
@@ -192,6 +221,85 @@ def _safe_year(value) -> int | None:
         return None
 
 
+class QueryDetails(NamedTuple):
+    """Focused query plus diagnostics about model-vocabulary coverage."""
+
+    extracted: dict
+    query_text: str
+    cleaned_query: str
+    vocab_hits: list[str]
+    vocab_total: int
+
+
+def _build_query_details(
+    english_input: str,
+    state_dict: ConversationState,
+    movies_df,
+    vectorizer,
+) -> QueryDetails:
+    """Build the focused TF-IDF query and report its vocabulary coverage."""
+    vocabulary = getattr(vectorizer, "vocabulary_", {})
+    model_vocab = set(vocabulary) or None
+    extracted = build_query(
+        english_input,
+        _get_genre_vocab(movies_df),
+        vocab=model_vocab,
+    )
+    query_parts = (
+        (state_dict.get("genres") or [])
+        + (state_dict.get("mood") or [])
+        + extracted["entities"]["genres"]
+        + extracted["query"].split()
+    )
+    query_text = " ".join(dict.fromkeys(filter(None, query_parts))).strip()
+    cleaned_query = clean_text(query_text) if query_text else ""
+    query_tokens = cleaned_query.split()
+    vocab_hits = [token for token in query_tokens if token in vocabulary]
+    return QueryDetails(
+        extracted, query_text, cleaned_query, vocab_hits, len(query_tokens)
+    )
+
+
+def _build_recommender_filters(
+    state_dict: ConversationState,
+) -> RecommenderFilters:
+    """Adapt conversation preferences to the recommender's legacy filter keys."""
+    year_range = state_dict.get("year_range")
+    return {
+        "language": state_dict.get("language"),
+        "rating": state_dict.get("min_rating") or state_dict.get("rating"),
+        "year": year_range[0] if year_range else None,
+    }
+
+
+def _empty_recommender_filters() -> RecommenderFilters:
+    """Return an empty, correctly typed recommender-filter mapping."""
+    return {"language": None, "rating": None, "year": None}
+
+
+def _serialize_recommendations(
+    recommendations, state_dict: ConversationState
+) -> list[RecommendationCard]:
+    """Convert recommendation rows into the stable, card-ready response schema."""
+    serialized: list[RecommendationCard] = []
+    for movie in recommendations.to_dict(orient="records"):
+        card: RecommendationCard = {
+            "movieId": (
+                int(movie["movieId"]) if pd.notna(movie.get("movieId")) else None
+            ),
+            "title": movie.get("title", "Untitled"),
+            "year": _safe_year(movie.get("release_year")),
+            "rating": movie.get("vote_average"),
+            "genres": _parse_genres(movie.get("genres_list")),
+            "language": movie.get("original_language"),
+            "overview": str(movie.get("overview") or "").strip(),
+            "similarity": float(movie.get("similarity_score") or 0.0),
+            "explanation": generate_explanation(movie, dict(state_dict)),
+        }
+        serialized.append(card)
+    return serialized
+
+
 @dataclass
 class PipelineTrace:
     """
@@ -209,6 +317,7 @@ class PipelineTrace:
       3. Filters                — the exact state_dict passed to the recommender.
       4. Recommendation         — cosine-similarity results (English explanations).
     """
+
     raw_input: str
     # Stage 0 — language & translation
     domain: dict
@@ -225,24 +334,24 @@ class PipelineTrace:
     vocab_hits: list = field(default_factory=list)
     vocab_total: int = 0
     # Stage 3 — filters applied inside recommend_on_the_fly
-    filters: dict = field(default_factory=dict)
+    filters: RecommenderFilters = field(default_factory=_empty_recommender_filters)
     # Stage 4 — recommendation (explanations kept in English here)
     recommendations: list = field(default_factory=list)
     max_similarity: float = 0.0
     broadened: bool = False
-    status: str = "ok"          # "ok" | "empty_query" | "no_matches"
+    status: str = "ok"  # "ok" | "empty_query" | "no_matches"
     intro_en: str = ""
 
 
 def run_pipeline(
     user_input: str,
-    state_dict: dict,
+    state_dict: ConversationState,
     movies_df,
     vectorizer,
     tfidf_matrix=None,
     year_mode: str = "soft",
     top_n: int = 5,
-    form_data: dict | None = None,
+    form_data: FormFilters | None = None,
 ) -> PipelineTrace:
     """
     Run one user turn through the WHOLE pipeline and return every intermediate
@@ -267,28 +376,17 @@ def run_pipeline(
 
     # ── Stage 1: preference extraction ────────────────────────────────────────
     prefs = extract_preferences(english_input)
-    _fill_pref_gaps(prefs, domain)   # backfill from original-language domain terms
+    _fill_pref_gaps(prefs, domain)  # backfill from original-language domain terms
     _apply_form_data(prefs, form_data)  # overlay optional structured filters (API)
     state_dict.update(prefs)
 
     # ── Stage 2: build the FOCUSED query fed to TF-IDF cosine similarity ───────
-    model_vocab = set(getattr(vectorizer, "vocabulary_", {})) or None
-    extracted = build_query(english_input, _get_genre_vocab(movies_df), vocab=model_vocab)
-    query_parts = (
-        (state_dict.get("genres") or [])
-        + (state_dict.get("mood") or [])
-        + extracted["entities"]["genres"]
-        + extracted["query"].split()
+    query = _build_query_details(
+        english_input,
+        state_dict,
+        movies_df,
+        vectorizer,
     )
-    query_text = " ".join(dict.fromkeys(p for p in query_parts if p)).strip()
-
-    # Show exactly what the vectorizer sees: the query is cleaned the same way
-    # the movie corpus was, then only terms present in the vocabulary contribute
-    # to the cosine score. This is what makes the similarity verifiable.
-    cleaned_query = clean_text(query_text) if query_text else ""
-    vocab_tokens = set(getattr(vectorizer, "vocabulary_", {}))
-    q_tokens = cleaned_query.split()
-    vocab_hits = [t for t in q_tokens if t in vocab_tokens]
 
     trace = PipelineTrace(
         raw_input=user_input,
@@ -298,30 +396,31 @@ def run_pipeline(
         was_translated=(english_input.strip() != user_input.strip()),
         translation_available=_TRANSLATION_AVAILABLE,
         prefs=dict(prefs),
-        keyword_extraction=extracted,
-        query_text=query_text,
-        cleaned_query=cleaned_query,
-        vocab_hits=vocab_hits,
-        vocab_total=len(q_tokens),
+        keyword_extraction=query.extracted,
+        query_text=query.query_text,
+        cleaned_query=query.cleaned_query,
+        vocab_hits=query.vocab_hits,
+        vocab_total=query.vocab_total,
     )
 
-    if not query_text:
+    if not query.query_text:
         trace.status = "empty_query"
         trace.intro_en = _GREETING
         return trace
 
     # ── Stage 3: filters (the exact state_dict passed to the recommender) ──────
-    legacy_state = {
-        "language": state_dict.get("language"),
-        "rating":   state_dict.get("min_rating") or state_dict.get("rating"),
-        "year": state_dict["year_range"][0] if state_dict.get("year_range") else None,
-    }
+    legacy_state = _build_recommender_filters(state_dict)
     trace.filters = legacy_state
 
     # ── Stage 4: TF-IDF cosine similarity + soft-decade ranking ───────────────
     recommendations = recommend_on_the_fly(
-        query_text, movies_df, vectorizer, tfidf_matrix,
-        state_dict=legacy_state, year_mode=year_mode, top_n=top_n,
+        query.query_text,
+        movies_df,
+        vectorizer,
+        tfidf_matrix,
+        state_dict=legacy_state,
+        year_mode=year_mode,
+        top_n=top_n,
     )
 
     if recommendations is None or recommendations.empty:
@@ -329,24 +428,7 @@ def run_pipeline(
         trace.intro_en = "No matches found. Try different words or a broader search."
         return trace
 
-    recs: list[dict] = []
-    for _, movie in recommendations.iterrows():
-        movie_dict = movie.to_dict()
-        recs.append(
-            {
-                "movieId": int(movie_dict["movieId"]) if pd.notna(movie_dict.get("movieId")) else None,
-                "title": movie_dict.get("title", "Untitled"),
-                "year": _safe_year(movie_dict.get("release_year")),
-                "rating": movie_dict.get("vote_average"),
-                "genres": _parse_genres(movie_dict.get("genres_list")),
-                "language": movie_dict.get("original_language"),
-                "overview": str(movie_dict.get("overview") or "").strip(),
-                "similarity": float(movie_dict.get("similarity_score") or 0.0),
-                # English here; the user-facing wrapper translates it back.
-                "explanation": generate_explanation(movie_dict, state_dict),
-            }
-        )
-
+    recs = _serialize_recommendations(recommendations, state_dict)
     trace.recommendations = recs
     trace.max_similarity = max((r["similarity"] for r in recs), default=0.0)
     trace.broadened = trace.max_similarity < _LOW_CONFIDENCE_THRESHOLD
@@ -361,11 +443,11 @@ def run_pipeline(
 
 def get_chat_recommendations(
     user_input: str,
-    state_dict: dict,
+    state_dict: ConversationState,
     movies_df,
     vectorizer,
     tfidf_matrix=None,
-) -> tuple[str, list[dict], dict, dict]:
+) -> tuple[str, list[RecommendationCard], ConversationState, dict]:
     """
     Process one user turn and return structured, card-ready recommendations.
 
@@ -386,20 +468,23 @@ def get_chat_recommendations(
     }
 
     intro = _from_english(trace.intro_en, ui_lang)
-    recs = [
-        {**rec, "explanation": _from_english(rec["explanation"], ui_lang)}
-        for rec in trace.recommendations
-    ]
+    recs: list[RecommendationCard] = []
+    for recommendation in trace.recommendations:
+        translated = recommendation.copy()
+        translated["explanation"] = _from_english(
+            recommendation["explanation"], ui_lang
+        )
+        recs.append(translated)
     return intro, recs, state_dict, meta
 
 
 def chatbot_response(
     user_input: str,
-    state_dict: dict,
+    state_dict: ConversationState,
     movies_df,
     vectorizer,
     tfidf_matrix=None,
-) -> tuple[str, dict]:
+) -> tuple[str, ConversationState]:
     """
     Legacy text wrapper around get_chat_recommendations.
 
@@ -425,7 +510,7 @@ def chatbot_response(
     return response, state_dict
 
 
-def initialize_conversation_state() -> dict:
+def initialize_conversation_state() -> ConversationState:
     """
     Create a fresh state dict for a new conversation.
 
@@ -434,12 +519,12 @@ def initialize_conversation_state() -> dict:
       similar_to, free_text, ui_language (the language the USER writes in).
     """
     return {
-        "genres":      [],
-        "language":    None,
-        "year_range":  None,
-        "mood":        [],
-        "min_rating":  None,
-        "similar_to":  None,
-        "free_text":   "",
+        "genres": [],
+        "language": None,
+        "year_range": None,
+        "mood": [],
+        "min_rating": None,
+        "similar_to": None,
+        "free_text": "",
         "ui_language": None,
     }

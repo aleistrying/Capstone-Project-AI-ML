@@ -1,6 +1,4 @@
-import sys
-import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+"""Tests for extracting structured preferences from English requests."""
 
 from src.nlp.nlp_preferences import extract_preferences
 

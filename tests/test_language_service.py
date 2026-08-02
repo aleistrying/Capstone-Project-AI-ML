@@ -1,6 +1,4 @@
-import sys
-import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+"""Tests for lightweight language detection and vocabulary normalization."""
 
 from backend.services.language_service import detect_language, normalize
 

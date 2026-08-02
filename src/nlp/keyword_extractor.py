@@ -20,6 +20,7 @@ keywords and passed straight to the cosine-similarity model — that's exactly t
 signal we want the recommender to match on.
 """
 
+import ast
 import re
 
 import nltk
@@ -30,8 +31,17 @@ _STOPWORDS = set(nltk.corpus.stopwords.words("english"))
 # Domain filler words to discard — these say "I want a movie" but carry no signal
 # for similarity. Taken from the "movies" intent in Lili's intents.json.
 IGNORED_WORDS: set[str] = {
-    "movie", "movies", "film", "films", "watch",
-    "recommend", "recommendation", "suggest", "suggestions", "want", "see",
+    "movie",
+    "movies",
+    "film",
+    "films",
+    "watch",
+    "recommend",
+    "recommendation",
+    "suggest",
+    "suggestions",
+    "want",
+    "see",
 }
 
 # Conversational/visual filler NOT caught by stopwords. Added during query tuning
@@ -39,8 +49,21 @@ IGNORED_WORDS: set[str] = {
 # movie-text signal, so dropping them concentrates the query on real content
 # words and measurably increases cosine similarity for relevant films.
 QUERY_NOISE: set[str] = {
-    "would", "like", "really", "kind", "something", "anything", "maybe", "please",
-    "includes", "include", "including", "black", "white", "colour", "color",
+    "would",
+    "like",
+    "really",
+    "kind",
+    "something",
+    "anything",
+    "maybe",
+    "please",
+    "includes",
+    "include",
+    "including",
+    "black",
+    "white",
+    "colour",
+    "color",
 }
 
 # Thematic synonym expansion. Maps a meaning word the user typed to related terms
@@ -50,24 +73,22 @@ QUERY_NOISE: set[str] = {
 # use so no out-of-vocabulary noise is introduced.
 THEMES: dict[str, list[str]] = {
     "psychological": ["psycho", "mind", "obsession", "paranoia", "sanity"],
-    "terror":        ["horror", "fear", "nightmare", "killer", "evil"],
-    "scary":         ["horror", "fear", "nightmare", "creepy"],
-    "horror":        ["fear", "nightmare", "evil", "killer"],
-    "funny":         ["comedy", "hilarious", "laugh", "humor"],
-    "comedy":        ["funny", "hilarious", "laugh"],
-    "romantic":      ["romance", "love", "relationship"],
-    "romance":       ["love", "relationship", "romantic"],
-    "dark":          ["grim", "gritty", "noir"],
-    "intense":       ["thrilling", "suspense"],
-    "space":         ["alien", "galaxy", "planet"],
-    "action":        ["fight", "chase", "explosion"],
+    "terror": ["horror", "fear", "nightmare", "killer", "evil"],
+    "scary": ["horror", "fear", "nightmare", "creepy"],
+    "horror": ["fear", "nightmare", "evil", "killer"],
+    "funny": ["comedy", "hilarious", "laugh", "humor"],
+    "comedy": ["funny", "hilarious", "laugh"],
+    "romantic": ["romance", "love", "relationship"],
+    "romance": ["love", "relationship", "romantic"],
+    "dark": ["grim", "gritty", "noir"],
+    "intense": ["thrilling", "suspense"],
+    "space": ["alien", "galaxy", "planet"],
+    "action": ["fight", "chase", "explosion"],
 }
 
 
 def _parse_genres_cell(raw) -> list[str]:
     """Parse one `genres_list` cell (a stringified list) into lowercase genre names."""
-    import ast
-
     if isinstance(raw, list):
         return [str(g).lower() for g in raw]
     if isinstance(raw, str) and raw.strip():
@@ -100,7 +121,7 @@ def extract_entities(text: str, genre_vocab: set[str]) -> dict:
     AUTHOR: Lili — logic ported from MovieBot.extract_entities.
     """
     text = text.lower()
-    entities = {"genres": [], "years": []}
+    entities: dict[str, list] = {"genres": [], "years": []}
 
     for genre in genre_vocab:
         # word-boundary match so "war" doesn't fire inside "warm", etc.
@@ -160,7 +181,9 @@ def expand_terms(terms: list[str], vocab: set[str] | None = None) -> list[str]:
     return list(dict.fromkeys(out))
 
 
-def build_query(text: str, genre_vocab: set[str], vocab: set[str] | None = None) -> dict:
+def build_query(
+    text: str, genre_vocab: set[str], vocab: set[str] | None = None
+) -> dict:
     """
     Turn raw user text into a focused query string for TF-IDF.
 
