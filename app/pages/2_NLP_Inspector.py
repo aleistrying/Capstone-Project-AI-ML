@@ -93,14 +93,18 @@ user_input = st.text_area(
 run = st.button("Analyze", type="primary", disabled=not user_input.strip())
 
 if not run:
-    st.info("Enter a query above and click **Analyze** to trace it through the full pipeline.")
+    st.info(
+        "Enter a query above and click **Analyze** to trace it through the full pipeline."
+    )
     st.stop()
 
 # ---------------------------------------------------------------------------
 # Run the ONE centralized pipeline
 # ---------------------------------------------------------------------------
 
-with st.spinner("Running pipeline (first non-English query downloads a translation model)…"):
+with st.spinner(
+    "Running pipeline (first non-English query downloads a translation model)…"
+):
     trace = run_pipeline(
         user_input,
         initialize_conversation_state(),
@@ -139,7 +143,9 @@ with st.expander("Stage 0 — Language detection & translation", expanded=True):
     with col1:
         st.write("**Original input**")
         st.code(trace.raw_input)
-        st.caption(f"Stopword-detected language (language_service): `{trace.domain.get('detected_language', '—')}`")
+        st.caption(
+            f"Stopword-detected language (language_service): `{trace.domain.get('detected_language', '—')}`"
+        )
     with col2:
         st.write("**English input (fed to NLP)**")
         st.code(trace.english_input)
@@ -153,12 +159,14 @@ with st.expander("Stage 0 — Language detection & translation", expanded=True):
 # ── Stage 1: Domain normalization ───────────────────────────────────────────
 with st.expander("Stage 1 — Domain normalization (language_service)", expanded=True):
     st.write("**Mapped entities** (multilingual synonym → canonical English)")
-    st.json({
-        "genres":     trace.domain.get("mapped_genres", []),
-        "moods":      trace.domain.get("mapped_moods", []),
-        "year_range": trace.domain.get("mapped_year_range"),
-        "language":   trace.domain.get("mapped_language"),
-    })
+    st.json(
+        {
+            "genres": trace.domain.get("mapped_genres", []),
+            "moods": trace.domain.get("mapped_moods", []),
+            "year_range": trace.domain.get("mapped_year_range"),
+            "language": trace.domain.get("mapped_language"),
+        }
+    )
     st.caption(
         "These backfill any preference the extractor missed on the English text "
         "(e.g. genre words that only appeared in the original language)."
@@ -179,7 +187,11 @@ with st.expander("Stage 2 — Preference extraction (nlp_preferences)", expanded
             notes.append(f"Mood: {trace.prefs['mood']}")
         yr = trace.prefs.get("year_range")
         if yr:
-            notes.append(f"Year range: {yr[0]}–{yr[1]}" if isinstance(yr, (list, tuple)) and len(yr) == 2 else f"Year: {yr}")
+            notes.append(
+                f"Year range: {yr[0]}–{yr[1]}"
+                if isinstance(yr, (list, tuple)) and len(yr) == 2
+                else f"Year: {yr}"
+            )
         if trace.prefs.get("language"):
             notes.append(f"Movie-language filter: {trace.prefs['language']}")
         if trace.prefs.get("min_rating"):
@@ -192,7 +204,9 @@ with st.expander("Stage 2 — Preference extraction (nlp_preferences)", expanded
             st.markdown(f"- {n}")
 
 # ── Stage 3: Query building (what cosine runs against) ──────────────────────
-with st.expander("Stage 3 — Query building (what TF-IDF cosine runs against)", expanded=True):
+with st.expander(
+    "Stage 3 — Query building (what TF-IDF cosine runs against)", expanded=True
+):
     col1, col2 = st.columns(2)
     with col1:
         st.write("**Focused query** (genres + mood + extracted keywords)")
@@ -201,10 +215,15 @@ with st.expander("Stage 3 — Query building (what TF-IDF cosine runs against)",
         st.code(trace.cleaned_query or "(empty)")
     with col2:
         st.write("**Vocabulary coverage**")
-        st.metric("Terms matching the TF-IDF vocabulary", f"{len(trace.vocab_hits)}/{trace.vocab_total}")
+        st.metric(
+            "Terms matching the TF-IDF vocabulary",
+            f"{len(trace.vocab_hits)}/{trace.vocab_total}",
+        )
         st.write(trace.vocab_hits or "—")
         if trace.vocab_total and not trace.vocab_hits:
-            st.error("No query term is in the vocabulary → every cosine score will be ~0.")
+            st.error(
+                "No query term is in the vocabulary → every cosine score will be ~0."
+            )
     st.caption(
         "Cosine similarity is computed between this cleaned query vector and each "
         "movie's TF-IDF vector. Only terms present in the vocabulary contribute — "

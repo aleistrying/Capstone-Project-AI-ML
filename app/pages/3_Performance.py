@@ -68,7 +68,9 @@ c[0].metric("EN median", f"{en.get('median', 0):.1f}")
 c[1].metric("EN p95", f"{en.get('p95', 0):.1f}")
 if es:
     c[2].metric("ES median", f"{es.get('median', 0):.1f}")
-    c[3].metric("Translation overhead", f"{e2e.get('translation_overhead_ms', 0):.1f} ms")
+    c[3].metric(
+        "Translation overhead", f"{e2e.get('translation_overhead_ms', 0):.1f} ms"
+    )
 
 st.subheader("Memory")
 c = st.columns(4)

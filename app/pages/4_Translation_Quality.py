@@ -23,7 +23,9 @@ from src.metrics.translation_quality import (
     _check_runtime,
 )
 
-st.set_page_config(page_title="CineAssist — Translation BLEU", page_icon="🌐", layout="wide")
+st.set_page_config(
+    page_title="CineAssist — Translation BLEU", page_icon="🌐", layout="wide"
+)
 st.title("🌐 Translation Quality — BLEU")
 st.caption(
     "sacreBLEU on a curated movie-request parallel set (MarianMT, Helsinki-NLP). "
@@ -35,7 +37,9 @@ if runtime_msg:
     st.warning(runtime_msg)
 
 if not st.button("▶ Run BLEU evaluation (base model)", type="primary"):
-    st.info("Click to translate the eval set with the current MarianMT models and score sacreBLEU.")
+    st.info(
+        "Click to translate the eval set with the current MarianMT models and score sacreBLEU."
+    )
     st.stop()
 
 with st.spinner("Translating eval set and scoring BLEU…"):

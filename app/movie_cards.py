@@ -11,8 +11,14 @@ import streamlit as st
 
 # A small palette to give each placeholder poster a distinct, stable colour.
 _POSTER_COLORS = [
-    "#6C5CE7", "#00B894", "#0984E3", "#E17055",
-    "#E84393", "#FDCB6E", "#00CEC9", "#D63031",
+    "#6C5CE7",
+    "#00B894",
+    "#0984E3",
+    "#E17055",
+    "#E84393",
+    "#FDCB6E",
+    "#00CEC9",
+    "#D63031",
 ]
 
 
@@ -54,7 +60,7 @@ def _poster_html(title: str, index: int) -> str:
         f'<div class="cine-poster" style="background:{color};">'
         f'<span class="emoji">🎬</span>'
         f'<span class="initial">{html.escape(initial)}</span>'
-        f'</div>'
+        f"</div>"
     )
 
 
@@ -72,14 +78,18 @@ def _render_card(rec: dict, index: int) -> None:
         rating = rec.get("rating")
         if rating is not None:
             try:
-                title_line += f' <span class="cine-rating">⭐ {float(rating):.1f}</span>'
+                title_line += (
+                    f' <span class="cine-rating">⭐ {float(rating):.1f}</span>'
+                )
             except (TypeError, ValueError):
                 pass
         st.markdown(title_line, unsafe_allow_html=True)
 
         genres = rec.get("genres") or []
         if genres:
-            chips = "".join(f'<span class="cine-chip">{html.escape(str(g))}</span>' for g in genres)
+            chips = "".join(
+                f'<span class="cine-chip">{html.escape(str(g))}</span>' for g in genres
+            )
             st.markdown(chips, unsafe_allow_html=True)
 
         # Similarity as a 0–100% match indicator. Clamp to [0, 1] for the bar.
@@ -98,7 +108,9 @@ def _render_card(rec: dict, index: int) -> None:
                 st.caption("No overview available.")
 
 
-def render_recommendations(intro: str, recs: list[dict], meta: dict | None = None) -> None:
+def render_recommendations(
+    intro: str, recs: list[dict], meta: dict | None = None
+) -> None:
     """
     Render an assistant turn: intro line, optional low-confidence notice, and cards.
 

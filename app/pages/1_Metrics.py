@@ -26,7 +26,9 @@ from src.recommender.recommender_engine import recommend_on_the_fly
 
 st.set_page_config(page_title="CineAssist — Metrics", page_icon="📊", layout="wide")
 st.title("📊 Evaluation Metrics")
-st.caption("Precision@5 · Recall@5 · F1 · MRR · Accuracy across 10 predefined test scenarios")
+st.caption(
+    "Precision@5 · Recall@5 · F1 · MRR · Accuracy across 10 predefined test scenarios"
+)
 
 # ---------------------------------------------------------------------------
 # Asset loading — shared cache with the main app and every other page
@@ -44,7 +46,9 @@ with st.sidebar:
     for s in scenarios:
         st.markdown(f"**{s['id']}**  \n{s['description']}")
     st.divider()
-    top_n = st.slider("Recommendations per query (top-N)", min_value=3, max_value=10, value=5)
+    top_n = st.slider(
+        "Recommendations per query (top-N)", min_value=3, max_value=10, value=5
+    )
 
 # ---------------------------------------------------------------------------
 # Run evaluation
@@ -70,25 +74,27 @@ if st.button("▶ Run all scenarios", type="primary"):
     # ── Summary KPIs ──────────────────────────────────────────────────────────
     st.subheader("Average Metrics")
     c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Precision@5",  f"{avg['avg_precision']:.3f}")
-    c2.metric("Recall@5",     f"{avg['avg_recall']:.3f}")
-    c3.metric("F1 Score",     f"{avg['avg_f1_score']:.3f}")
-    c4.metric("MRR",          f"{avg['avg_mrr']:.3f}")
-    c5.metric("Accuracy",     f"{avg['avg_accuracy']:.3f}")
+    c1.metric("Precision@5", f"{avg['avg_precision']:.3f}")
+    c2.metric("Recall@5", f"{avg['avg_recall']:.3f}")
+    c3.metric("F1 Score", f"{avg['avg_f1_score']:.3f}")
+    c4.metric("MRR", f"{avg['avg_mrr']:.3f}")
+    c5.metric("Accuracy", f"{avg['avg_accuracy']:.3f}")
 
     # ── Per-scenario table ────────────────────────────────────────────────────
     st.subheader("Per-Scenario Results")
     rows = []
     for r in results:
-        rows.append({
-            "Scenario": r.get("scenario_id", ""),
-            "Description": r.get("scenario_description", ""),
-            "Precision": round(r["precision"], 3),
-            "Recall": round(r["recall"], 3),
-            "F1": round(r["f1_score"], 3),
-            "MRR": round(r["mrr"], 3),
-            "Accuracy": round(r["accuracy"], 3),
-        })
+        rows.append(
+            {
+                "Scenario": r.get("scenario_id", ""),
+                "Description": r.get("scenario_description", ""),
+                "Precision": round(r["precision"], 3),
+                "Recall": round(r["recall"], 3),
+                "F1": round(r["f1_score"], 3),
+                "MRR": round(r["mrr"], 3),
+                "Accuracy": round(r["accuracy"], 3),
+            }
+        )
     df_results = pd.DataFrame(rows)
     st.dataframe(df_results, use_container_width=True, hide_index=True)
 
@@ -105,7 +111,9 @@ if st.button("▶ Run all scenarios", type="primary"):
     # ── Detail expander per scenario ─────────────────────────────────────────
     st.subheader("Details")
     for r in results:
-        with st.expander(f"{r.get('scenario_id')} — {r.get('scenario_description', '')}"):
+        with st.expander(
+            f"{r.get('scenario_id')} — {r.get('scenario_description', '')}"
+        ):
             st.write(f"**Query:** {r['user_input']}")
             col1, col2 = st.columns(2)
             col1.write("**Recommended IDs**")
@@ -116,10 +124,10 @@ if st.button("▶ Run all scenarios", type="primary"):
             st.write(f"**Hits:** {sorted(hits) if hits else 'none'}")
             m1, m2, m3, m4, m5 = st.columns(5)
             m1.metric("Precision", f"{r['precision']:.3f}")
-            m2.metric("Recall",    f"{r['recall']:.3f}")
-            m3.metric("F1",        f"{r['f1_score']:.3f}")
-            m4.metric("MRR",       f"{r['mrr']:.3f}")
-            m5.metric("Accuracy",  f"{r['accuracy']:.3f}")
+            m2.metric("Recall", f"{r['recall']:.3f}")
+            m3.metric("F1", f"{r['f1_score']:.3f}")
+            m4.metric("MRR", f"{r['mrr']:.3f}")
+            m5.metric("Accuracy", f"{r['accuracy']:.3f}")
 
     # ── Export CSV ────────────────────────────────────────────────────────────
     csv_data = df_results.to_csv(index=False).encode("utf-8")
@@ -131,7 +139,9 @@ if st.button("▶ Run all scenarios", type="primary"):
     )
 
 else:
-    st.info("Click **Run all scenarios** to evaluate the recommender against the predefined test set.")
+    st.info(
+        "Click **Run all scenarios** to evaluate the recommender against the predefined test set."
+    )
 
 # ---------------------------------------------------------------------------
 # Metric definitions
