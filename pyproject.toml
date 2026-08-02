@@ -58,6 +58,28 @@ module = [
 ]
 ignore_missing_imports = true
 
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+extend-exclude = ["data", "models", "notebooks", "graphify-out"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "SIM", "C4", "UP", "BLE", "PERF", "PTH"]
+ignore = ["E402", "E501"]
+
+[tool.deptry]
+extend_exclude = ["scripts", "notebooks", "data", "models", "graphify-out"]
+per_rule_ignores = { DEP002 = ["pyarrow", "uvicorn"], DEP003 = ["datasets", "evaluate", "sacrebleu", "torch", "transformers"] }
+
+[tool.mutmut]
+source_paths = ["backend/services/language_service.py"]
+pytest_add_cli_args = ["-q"]
+pytest_add_cli_args_test_selection = [
+  "tests/test_language_service.py",
+]
+on_dependency_change = "rerun"
+
+
 [tool.pylint.main]
 ignore-paths = [
   "^.venv/",

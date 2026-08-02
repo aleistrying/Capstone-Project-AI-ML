@@ -1,0 +1,27 @@
+[importlinter]
+root_packages =
+    src
+    backend
+    app
+include_external_packages = True
+
+[importlinter:contract:domain-independent]
+name = NLP, recommender and utility modules stay independent of UI and API layers
+type = forbidden
+source_modules =
+    src.nlp
+    src.recommender
+    src.utils
+forbidden_modules =
+    app
+    backend
+
+[importlinter:contract:no-notebook-dependencies]
+name = Production packages never import notebooks
+type = forbidden
+source_modules =
+    src
+    backend
+    app
+forbidden_modules =
+    notebooks
