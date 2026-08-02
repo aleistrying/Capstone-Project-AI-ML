@@ -1,0 +1,88 @@
+[tool.black]
+line-length = 88
+target-version = ["py310"]
+extend-exclude = '''
+/(
+    \.git
+  | \.venv
+  | data
+  | models
+  | notebooks
+  | graphify-out
+)/
+'''
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.coverage.run]
+branch = true
+source = ["src", "backend"]
+omit = [
+  "src/translation/fine_tune.py",
+  "src/metrics/example_usage.py",
+  "src/metrics/setup_and_run.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+exclude_also = [
+  "if TYPE_CHECKING:",
+  "if __name__ == .__main__.:",
+]
+
+[tool.mypy]
+python_version = "3.10"
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+exclude = "^(notebooks|data|models|graphify-out)/"
+
+[[tool.mypy.overrides]]
+module = [
+  "datasets.*",
+  "evaluate.*",
+  "joblib.*",
+  "langdetect.*",
+  "nltk.*",
+  "pandas.*",
+  "sacrebleu.*",
+  "scipy.*",
+  "sklearn.*",
+  "streamlit.*",
+  "torch.*",
+  "transformers.*",
+]
+ignore_missing_imports = true
+
+[tool.pylint.main]
+ignore-paths = [
+  "^.venv/",
+  "^data/",
+  "^models/",
+  "^notebooks/",
+  "^graphify-out/",
+]
+jobs = 0
+py-version = "3.10"
+
+[tool.pylint.format]
+max-line-length = 88
+
+[tool.pylint.messages_control]
+disable = [
+  "duplicate-code",
+  "fixme",
+  "line-too-long",
+  "missing-function-docstring",
+  "too-few-public-methods",
+]
+
+[tool.pylint.design]
+max-args = 8
+max-attributes = 20
+max-locals = 20
+max-positional-arguments = 8

@@ -1,0 +1,16 @@
+[flake8]
+max-line-length = 88
+# Black owns physical line wrapping. E501 is ignored because URLs, user-facing
+# strings, and generated evaluation fixtures cannot always be split safely.
+extend-ignore = E203, E501, W503
+exclude =
+    .git,
+    .venv,
+    data,
+    models,
+    notebooks,
+    graphify-out
+per-file-ignores =
+    app/pages/*.py:E402
+    src/metrics/*.py:E402
+    src/translation/fine_tune.py:E402
