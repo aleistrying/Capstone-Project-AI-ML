@@ -51,27 +51,28 @@ from transformers import MarianMTModel, MarianTokenizer
 # Maps (source_lang, target_lang) tuples to HuggingFace model IDs.
 # These are the official Helsinki-NLP pretrained models.
 SUPPORTED_PAIRS = {
-    ('es', 'en'): 'Helsinki-NLP/opus-mt-es-en',
-    ('en', 'es'): 'Helsinki-NLP/opus-mt-en-es',
-    ('fr', 'en'): 'Helsinki-NLP/opus-mt-fr-en',
-    ('en', 'fr'): 'Helsinki-NLP/opus-mt-en-fr',
+    ("es", "en"): "Helsinki-NLP/opus-mt-es-en",
+    ("en", "es"): "Helsinki-NLP/opus-mt-en-es",
+    ("fr", "en"): "Helsinki-NLP/opus-mt-fr-en",
+    ("en", "fr"): "Helsinki-NLP/opus-mt-en-fr",
     # Portuguese: no dedicated pt-en model exists on HuggingFace.
     # opus-mt-ROMANCE-en handles all Romance languages (ES, FR, PT, IT) → EN.
     # opus-mt-en-ROMANCE handles EN → all Romance languages (requires >>pt<< prefix in input,
     # but for our use case the output is acceptable without it).
-    ('pt', 'en'): 'Helsinki-NLP/opus-mt-ROMANCE-en',
-    ('en', 'pt'): 'Helsinki-NLP/opus-mt-en-ROMANCE',
-    ('de', 'en'): 'Helsinki-NLP/opus-mt-de-en',
-    ('en', 'de'): 'Helsinki-NLP/opus-mt-en-de',
-    ('it', 'en'): 'Helsinki-NLP/opus-mt-it-en',
-    ('en', 'it'): 'Helsinki-NLP/opus-mt-en-it',
+    ("pt", "en"): "Helsinki-NLP/opus-mt-ROMANCE-en",
+    ("en", "pt"): "Helsinki-NLP/opus-mt-en-ROMANCE",
+    ("de", "en"): "Helsinki-NLP/opus-mt-de-en",
+    ("en", "de"): "Helsinki-NLP/opus-mt-en-de",
+    ("it", "en"): "Helsinki-NLP/opus-mt-it-en",
+    ("en", "it"): "Helsinki-NLP/opus-mt-en-it",
 }
 
 # Path where fine_tune.py saves domain-adapted models.
 # Structure: models/translation/es-en/  models/translation/en-es/  etc.
 _BASE_DIR = os.path.dirname(__file__)
-FINETUNED_DIR = os.path.normpath(os.path.join(
-    _BASE_DIR, '..', '..', 'models', 'translation'))
+FINETUNED_DIR = os.path.normpath(
+    os.path.join(_BASE_DIR, "..", "..", "models", "translation")
+)
 
 # In-memory cache: avoids reloading the same model twice in one session.
 # Key: "es-en" string. Value: (tokenizer, model) tuple.
@@ -101,16 +102,15 @@ def _load_model(src: str, tgt: str):
 
     # Use the fine-tuned model if it was produced by fine_tune.py
     finetuned_path = os.path.join(FINETUNED_DIR, key)
+    model_path: str | None
     if os.path.exists(finetuned_path) and os.listdir(finetuned_path):
         model_path = finetuned_path
         print(f"[Translator] Loading fine-tuned model: {key}")
     else:
         model_path = SUPPORTED_PAIRS.get((src, tgt))
         if not model_path:
-            raise ValueError(
-                f"No translation model available for {src} → {tgt}")
-        print(
-            f"[Translator] Loading base model from HuggingFace: {model_path}")
+            raise ValueError(f"No translation model available for {src} → {tgt}")
+        print(f"[Translator] Loading base model from HuggingFace: {model_path}")
 
     tokenizer = MarianTokenizer.from_pretrained(model_path)
     model = MarianMTModel.from_pretrained(model_path)
@@ -147,7 +147,7 @@ def translate(text: str, src_lang: str, tgt_lang: str) -> str:
     # max_length=512 matches the model's maximum context window.
     inputs = tokenizer(
         [text],
-        return_tensors='pt',
+        return_tensors="pt",
         padding=True,
         truncation=True,
         max_length=512,
@@ -176,7 +176,7 @@ def translate_to_english(text: str, src_lang: str) -> str:
     Returns:
         The text in English. If src_lang is 'en', returns text unchanged.
     """
-    return translate(text, src_lang, 'en')
+    return translate(text, src_lang, "en")
 
 
 def translate_from_english(text: str, tgt_lang: str) -> str:
@@ -193,4 +193,4 @@ def translate_from_english(text: str, tgt_lang: str) -> str:
     Returns:
         The text in tgt_lang. If tgt_lang is 'en', returns text unchanged.
     """
-    return translate(text, 'en', tgt_lang)
+    return translate(text, "en", tgt_lang)

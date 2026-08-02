@@ -54,20 +54,20 @@ DetectorFactory.seed = 42
 # auto-route the languages we actually support end-to-end with cached models
 # (en/es/fr/pt); any other guess (it, de, cy, da, …) falls back to English,
 # which is always safe (no surprise download, no hang).
-AUTO_DETECT = {'en', 'es', 'fr', 'pt'}
+AUTO_DETECT = {"en", "es", "fr", "pt"}
 
 # Languages we have translation models for (see translator.py SUPPORTED_PAIRS).
-SUPPORTED = {'en', 'es', 'fr', 'pt', 'de', 'it'}
+SUPPORTED = {"en", "es", "fr", "pt", "de", "it"}
 
 # Human-readable names for each supported language code.
 # Also used by get_supported_languages() in __init__.py.
 LANGUAGE_NAMES = {
-    'en': 'English',
-    'es': 'Spanish',
-    'fr': 'French',
-    'pt': 'Portuguese',
-    'de': 'German',
-    'it': 'Italian',
+    "en": "English",
+    "es": "Spanish",
+    "fr": "French",
+    "pt": "Portuguese",
+    "de": "German",
+    "it": "Italian",
 }
 
 
@@ -95,18 +95,18 @@ def detect_language(text: str) -> str:
         detect_language("映画が見たい")               → 'en'  (unsupported → fallback)
     """
     if not text or not text.strip():
-        return 'en'
+        return "en"
     try:
         candidates = detect_langs(text)
     except LangDetectException:
         # Raised for very short or ambiguous text (e.g. a single number).
-        return 'en'
+        return "en"
     if not candidates:
-        return 'en'
+        return "en"
     top = candidates[0]
     # Only auto-route languages we support end-to-end with cached models.
     # Everything else (unsupported languages like 'ja', or short-Romance
     # misdetections like Spanish→Italian) falls back to English.
     if top.lang in AUTO_DETECT:
         return top.lang
-    return 'en'
+    return "en"

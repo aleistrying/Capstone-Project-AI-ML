@@ -9,61 +9,61 @@ Run a single test:
     pytest brayan/test_translation.py::test_detect_spanish -v
 """
 
-import sys
 import os
 
-# Make src importable from the brayan/ folder
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-
-import pytest
-from translation.lang_detector import detect_language
-from translation.translator import translate, translate_to_english, translate_from_english
-
+from src.translation.lang_detector import detect_language
+from src.translation.translator import (
+    translate,
+    translate_to_english,
+    translate_from_english,
+)
 
 # ──────────────────────────────────────────────────────────────────
 # Language Detection Tests
 # ──────────────────────────────────────────────────────────────────
 
+
 class TestLanguageDetection:
 
     def test_detect_english(self):
         text = "I want to watch a comedy movie tonight"
-        assert detect_language(text) == 'en'
+        assert detect_language(text) == "en"
 
     def test_detect_spanish(self):
         text = "Quiero ver una película de acción"
-        assert detect_language(text) == 'es'
+        assert detect_language(text) == "es"
 
     def test_detect_french(self):
         text = "Je veux regarder un film d'action ce soir"
-        assert detect_language(text) == 'fr'
+        assert detect_language(text) == "fr"
 
     def test_detect_portuguese(self):
         text = "Quero assistir um filme de comédia"
-        assert detect_language(text) == 'pt'
+        assert detect_language(text) == "pt"
 
     def test_empty_string_defaults_to_english(self):
-        assert detect_language("") == 'en'
+        assert detect_language("") == "en"
 
     def test_whitespace_defaults_to_english(self):
-        assert detect_language("   ") == 'en'
+        assert detect_language("   ") == "en"
 
     def test_unsupported_language_defaults_to_english(self):
         # Japanese — not in our supported set
-        assert detect_language("映画が見たい") == 'en'
+        assert detect_language("映画が見たい") == "en"
 
     def test_movie_genre_spanish(self):
         text = "Recomiéndame una comedia romántica"
-        assert detect_language(text) == 'es'
+        assert detect_language(text) == "es"
 
     def test_movie_genre_english(self):
         text = "Recommend me a romantic comedy from the 2000s"
-        assert detect_language(text) == 'en'
+        assert detect_language(text) == "en"
 
 
 # ──────────────────────────────────────────────────────────────────
 # Translation Tests (ES ↔ EN)
 # ──────────────────────────────────────────────────────────────────
+
 
 class TestTranslation:
 
@@ -102,7 +102,10 @@ class TestTranslation:
         assert len(result) > 10
         # Should contain something about horror or movie
         lower = result.lower()
-        assert any(word in lower for word in ["horror", "movie", "film", "terror", "watch", "see"])
+        assert any(
+            word in lower
+            for word in ["horror", "movie", "film", "terror", "watch", "see"]
+        )
 
     def test_chatbot_response_translated(self):
         english_response = "Hello! What genre would you like to watch?"
@@ -114,6 +117,7 @@ class TestTranslation:
 # ──────────────────────────────────────────────────────────────────
 # Round-Trip Translation Tests
 # ──────────────────────────────────────────────────────────────────
+
 
 class TestRoundTrip:
     """
@@ -147,6 +151,7 @@ class TestRoundTrip:
 # Integration: Detection + Translation Pipeline
 # ──────────────────────────────────────────────────────────────────
 
+
 class TestIntegrationPipeline:
     """
     Simulates the full pipeline: detect language → translate to EN → translate back.
@@ -156,26 +161,30 @@ class TestIntegrationPipeline:
     def _pipeline(self, user_input: str, english_response: str) -> str:
         """Mirrors the logic in chatbot_response()."""
         lang = detect_language(user_input)
-        english_input = translate_to_english(user_input, lang) if lang != 'en' else user_input
+        english_input = (
+            translate_to_english(user_input, lang) if lang != "en" else user_input
+        )
         # (NLP processing would happen here)
-        final_response = translate_from_english(english_response, lang) if lang != 'en' else english_response
+        final_response = (
+            translate_from_english(english_response, lang)
+            if lang != "en"
+            else english_response
+        )
         return lang, english_input, final_response
 
     def test_english_user_no_translation(self):
         lang, eng_input, response = self._pipeline(
-            "I want a comedy movie",
-            "Movies found! Here are my top picks."
+            "I want a comedy movie", "Movies found! Here are my top picks."
         )
-        assert lang == 'en'
+        assert lang == "en"
         assert eng_input == "I want a comedy movie"
         assert response == "Movies found! Here are my top picks."
 
     def test_spanish_user_full_pipeline(self):
         lang, eng_input, response = self._pipeline(
-            "Quiero una comedia romántica",
-            "Movies found! Here are my top picks."
+            "Quiero una comedia romántica", "Movies found! Here are my top picks."
         )
-        assert lang == 'es'
+        assert lang == "es"
         assert isinstance(eng_input, str) and len(eng_input) > 5
         # Response should be in Spanish now
         assert isinstance(response, str) and len(response) > 5
@@ -183,9 +192,9 @@ class TestIntegrationPipeline:
     def test_french_user_full_pipeline(self):
         lang, eng_input, response = self._pipeline(
             "Je veux regarder un film d'horreur",
-            "Hello! What genre would you like to watch?"
+            "Hello! What genre would you like to watch?",
         )
-        assert lang == 'fr'
+        assert lang == "fr"
         assert isinstance(eng_input, str)
         assert isinstance(response, str)
 
@@ -194,15 +203,16 @@ class TestIntegrationPipeline:
 # Fine-Tuned Model Loading Test
 # ──────────────────────────────────────────────────────────────────
 
+
 class TestFineTunedModel:
 
     def test_finetuned_model_path_structure(self):
         """Check that the models/translation directory exists after fine-tuning."""
         models_dir = os.path.normpath(
-            os.path.join(os.path.dirname(__file__), '..', 'models', 'translation')
+            os.path.join(os.path.dirname(__file__), "..", "models", "translation")
         )
         # This passes before training (dir may not exist yet) — just validate the path
-        assert 'models' in models_dir and 'translation' in models_dir
+        assert "models" in models_dir and "translation" in models_dir
 
     def test_translate_still_works_without_finetuned_model(self):
         """Translator should fall back to the base HuggingFace model gracefully."""
@@ -214,7 +224,7 @@ class TestFineTunedModel:
 # Quick smoke test — run directly with: python test_translation.py
 # ──────────────────────────────────────────────────────────────────
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     print("Running smoke tests...\n")
 
     samples = [
@@ -226,9 +236,13 @@ if __name__ == '__main__':
     for text, expected_lang in samples:
         detected = detect_language(text)
         en_version = translate_to_english(text, detected)
-        back = translate_from_english("Movies found! Here are your recommendations.", detected)
+        back = translate_from_english(
+            "Movies found! Here are your recommendations.", detected
+        )
         print(f"Input   : {text}")
-        print(f"Detected: {detected} (expected: {expected_lang}) {'✓' if detected == expected_lang else '✗'}")
+        print(
+            f"Detected: {detected} (expected: {expected_lang}) {'✓' if detected == expected_lang else '✗'}"
+        )
         print(f"→ EN    : {en_version}")
         print(f"Response: {back}")
         print()
