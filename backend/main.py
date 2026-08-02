@@ -11,25 +11,22 @@ This module's only extra responsibilities are:
   2. Map the PipelineTrace into the JSON shape the API contract expects.
 """
 
-import sys
-import os
 from pathlib import Path
+from functools import lru_cache
 
 import joblib
 import pandas as pd
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from scipy.sparse import load_npz
 
 from src.chatbot.chatbot_flow import run_pipeline, initialize_conversation_state
+from src.contracts import FormFilters
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_PATH = PROJECT_ROOT / "data" / "processed"
 MODELS_PATH = PROJECT_ROOT / "models"
 
-# Process-wide asset cache: (movies_df, vectorizer, tfidf_matrix).
-_assets: tuple | None = None
 
-
+@lru_cache(maxsize=1)
 def _load_assets() -> tuple:
     """
     Load and cache the dataset and TF-IDF models from disk.
@@ -38,10 +35,6 @@ def _load_assets() -> tuple:
     file is missing. Cached after the first call so repeated /recommend requests
     don't reload the (large) matrix.
     """
-    global _assets
-    if _assets is not None:
-        return _assets
-
     csv_files = list(DATA_PATH.glob("*.csv"))
     movies_df = pd.read_csv(csv_files[0]) if csv_files else None
 
@@ -52,13 +45,11 @@ def _load_assets() -> tuple:
     npz_path = MODELS_PATH / "tfidf_matrix.npz"
     pkl_path = MODELS_PATH / "tfidf_matrix.pkl"
     if npz_path.exists():
-        from scipy.sparse import load_npz
         tfidf_matrix = load_npz(str(npz_path))
     elif pkl_path.exists():
         tfidf_matrix = joblib.load(pkl_path)
 
-    _assets = (movies_df, vectorizer, tfidf_matrix)
-    return _assets
+    return movies_df, vectorizer, tfidf_matrix
 
 
 def _safe_rating(value) -> float:
@@ -73,7 +64,7 @@ def _safe_rating(value) -> float:
 
 def handle_user_message(
     raw_text: str,
-    form_data: dict | None = None,
+    form_data: FormFilters | None = None,
     movies_df=None,
     top_n: int = 5,
 ) -> dict:
@@ -117,15 +108,17 @@ def handle_user_message(
 
     recommendations = []
     for r in trace.recommendations:
-        recommendations.append({
-            "title": r["title"],
-            "year": r["year"],
-            "genres": r["genres"],
-            "rating": _safe_rating(r["rating"]),
-            "score": round(float(r["similarity"]), 4),
-            "poster_url": r.get("poster_url"),
-            "explanation": r["explanation"],
-        })
+        recommendations.append(
+            {
+                "title": r["title"],
+                "year": r["year"],
+                "genres": r["genres"],
+                "rating": _safe_rating(r["rating"]),
+                "score": round(float(r["similarity"]), 4),
+                "poster_url": r.get("poster_url"),
+                "explanation": r["explanation"],
+            }
+        )
 
     return {
         "detected_language": trace.ui_language,

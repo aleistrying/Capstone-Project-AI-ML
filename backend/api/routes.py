@@ -15,16 +15,14 @@ Or use the run script:
   ./run.sh api
 """
 
-import os
-import sys
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+from typing import cast
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from backend.main import handle_user_message
 from backend.services import translation_service
+from src.contracts import FormFilters
 
 app = FastAPI(
     title="CineAssist API",
@@ -37,8 +35,10 @@ app = FastAPI(
 # Pydantic models — define the shape of request and response bodies
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class FormData(BaseModel):
     """Optional structured filters the user can send alongside free text."""
+
     genre: str | None = None
     mood: str | None = None
     year_range: list[int] | None = None
@@ -49,6 +49,7 @@ class FormData(BaseModel):
 
 class RecommendRequest(BaseModel):
     """Body for POST /recommend."""
+
     raw_text: str
     form_data: FormData | None = None
     top_n: int = 5
@@ -56,6 +57,7 @@ class RecommendRequest(BaseModel):
 
 class MovieResult(BaseModel):
     """One movie in the recommendation list."""
+
     title: str
     year: int | None
     genres: list[str] | str
@@ -67,6 +69,7 @@ class MovieResult(BaseModel):
 
 class RecommendResponse(BaseModel):
     """Full response from POST /recommend."""
+
     detected_language: str
     normalized_query: str
     preferences: dict
@@ -81,8 +84,9 @@ class TranslateRequest(BaseModel):
     Brayan's endpoint: accepts raw text in any supported language and
     returns the English translation along with metadata about what happened.
     """
+
     text: str
-    source_language: str | None = None   # optional: ISO 639-1 code e.g. 'es'
+    source_language: str | None = None  # optional: ISO 639-1 code e.g. 'es'
 
 
 class TranslateResponse(BaseModel):
@@ -95,6 +99,7 @@ class TranslateResponse(BaseModel):
       detected_language: what language we detected (or you provided)
       was_translated:   False if the input was already English
     """
+
     original_text: str
     translated_text: str
     detected_language: str
@@ -104,6 +109,7 @@ class TranslateResponse(BaseModel):
 # ─────────────────────────────────────────────────────────────────────────────
 # Endpoints
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 @app.get("/health")
 def health():
@@ -129,7 +135,9 @@ def recommend(request: RecommendRequest):
             "top_n": 5
         }
     """
-    form = request.form_data.model_dump() if request.form_data else None
+    form = (
+        cast(FormFilters, request.form_data.model_dump()) if request.form_data else None
+    )
 
     try:
         result = handle_user_message(
@@ -137,7 +145,7 @@ def recommend(request: RecommendRequest):
             form_data=form,
             top_n=request.top_n,
         )
-    except Exception as exc:
+    except (OSError, RuntimeError, TypeError) as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     return result
@@ -179,7 +187,7 @@ def translate(request: TranslateRequest):
     except ValueError as exc:
         # Raised when the language pair has no available model
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except Exception as exc:
+    except (OSError, RuntimeError, TypeError) as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     return result

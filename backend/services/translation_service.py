@@ -27,22 +27,14 @@ directly from `src.translation.translator`. This is intentional:
 The __init__.py re-exports all of them under a single namespace.
 """
 
-import sys
-from pathlib import Path
-
-# Ensure the project root is on the path so `src.translation` can be resolved
-# from anywhere (CLI, uvicorn, notebooks, etc.)
-ROOT = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(ROOT))
-
 # Import from the PACKAGE (__init__.py), not the raw module file.
 # This is the fix for the original stub which imported directly from translator.py
 # and crashed because detect_language and get_supported_languages don't live there.
 from src.translation import (
-    detect_language,          # from src/translation/lang_detector.py
+    detect_language,  # from src/translation/lang_detector.py
     get_supported_languages,  # defined in src/translation/__init__.py
-    translate_to_english,     # from src/translation/translator.py
-    translate_from_english,   # from src/translation/translator.py
+    translate_to_english,  # from src/translation/translator.py
+    translate_from_english,  # from src/translation/translator.py
 )
 
 

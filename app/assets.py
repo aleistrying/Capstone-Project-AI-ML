@@ -21,6 +21,7 @@ from pathlib import Path
 import joblib
 import pandas as pd
 import streamlit as st
+from scipy.sparse import load_npz
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_PATH = PROJECT_ROOT / "data" / "processed"
@@ -48,8 +49,6 @@ def _load_dataframe():
 def _load_matrix():
     npz_path = MODELS_PATH / "tfidf_matrix.npz"
     if npz_path.exists():
-        from scipy.sparse import load_npz
-
         return load_npz(str(npz_path))
 
     pkl_path = MODELS_PATH / "tfidf_matrix.pkl"

@@ -5,16 +5,14 @@ Runs locally:  streamlit run app/streamlit_app.py
 """
 
 import streamlit as st
-import sys
-from pathlib import Path
 
-# Resolve project root regardless of where the script is launched from
-PROJECT_ROOT = Path(__file__).parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
-
-from src.chatbot.chatbot_flow import get_chat_recommendations, initialize_conversation_state
-from app.movie_cards import inject_css, render_recommendations
 from app.assets import dataset_label, load_assets_or_stop
+from app.movie_cards import inject_css, render_recommendations
+from src.chatbot.chatbot_flow import (
+    get_chat_recommendations,
+    initialize_conversation_state,
+)
+from src.utils.text_cleaning import clean_text
 
 # ---------------------------------------------------------------------------
 # Asset loading — shared cache with every page under app/pages/ (see app/assets.py)
@@ -29,7 +27,9 @@ movies_df, vectorizer, tfidf_matrix = load_assets_or_stop()
 st.set_page_config(page_title="CineAssist", page_icon="🎬", layout="centered")
 inject_css()
 st.title("🎬 CineAssist")
-st.caption("Describe what you want to watch and get personalized movie recommendations.")
+st.caption(
+    "Describe what you want to watch and get personalized movie recommendations."
+)
 
 # ---------------------------------------------------------------------------
 # Sidebar — CineAssist is chat-first, so the sidebar only holds developer tools.
@@ -62,13 +62,12 @@ with st.sidebar:
         # Query inspector — see how text is cleaned and how many terms hit the vocab
         probe = st.text_input("Inspect a query", "batman superhero gotham")
         if probe:
-            from src.utils.text_cleaning import clean_text
-            cleaned = clean_text(probe)
-            toks = cleaned.split()
+            CLEANED_QUERY = clean_text(probe)
+            toks = CLEANED_QUERY.split()
             # Probe the vocabulary dict directly — copying its ~857K keys into a
             # set on every rerun costs more memory than the container can spare.
             hits = [t for t in toks if t in vocabulary]
-            st.write(f"Cleaned → `{cleaned or '(empty)'}`")
+            st.write(f"Cleaned → `{CLEANED_QUERY or '(empty)'}`")
             st.write(f"Vocab hits: **{len(hits)}/{len(toks)}** → {hits or '—'}")
             if toks and not hits:
                 st.warning("No query terms in vocabulary → similarity will be ~0.")
@@ -82,16 +81,17 @@ if "messages" not in st.session_state:
 if "chat_state" not in st.session_state:
     st.session_state.chat_state = initialize_conversation_state()
 
-def _render_message(message: dict) -> None:
+
+def _render_message(chat_message: dict) -> None:
     """Render one stored turn: rich cards for assistant recs, markdown otherwise."""
-    if message.get("recommendations") is not None:
+    if chat_message.get("recommendations") is not None:
         render_recommendations(
-            message.get("intro", ""),
-            message["recommendations"],
-            message.get("meta"),
+            chat_message.get("intro", ""),
+            chat_message["recommendations"],
+            chat_message.get("meta"),
         )
     else:
-        st.markdown(message.get("content", ""))
+        st.markdown(chat_message.get("content", ""))
 
 
 for message in st.session_state.messages:
