@@ -18,7 +18,7 @@ Or use the run script:
 from typing import cast
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from backend.main import handle_user_message
 from backend.services import translation_service
@@ -52,7 +52,7 @@ class RecommendRequest(BaseModel):
 
     raw_text: str
     form_data: FormData | None = None
-    top_n: int = 5
+    top_n: int = Field(default=5, ge=1, le=100)
 
 
 class MovieResult(BaseModel):
@@ -145,6 +145,8 @@ def recommend(request: RecommendRequest):
             form_data=form,
             top_n=request.top_n,
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except (OSError, RuntimeError, TypeError) as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
