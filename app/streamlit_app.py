@@ -4,6 +4,16 @@ CineAssist Streamlit UI.
 Runs locally:  streamlit run app/streamlit_app.py
 """
 
+import sys
+from pathlib import Path
+
+# `streamlit run app/streamlit_app.py` puts app/ on sys.path, not the repo root,
+# so make the root importable before the `from app...` / `from src...` imports
+# (the pages under app/pages/ already do the same).
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 import streamlit as st
 
 from app.assets import dataset_label, load_assets_or_stop
