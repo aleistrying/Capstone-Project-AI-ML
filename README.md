@@ -19,14 +19,14 @@
 
 ## Team Members
 
-| Name                            | Student ID | Main Contribution Area                                                |
-| ------------------------------- | ---------: | --------------------------------------------------------------------- |
-| Alejandro Parparcen Grillet     |   C0960408 | Architecture, backend integration, GitHub coordination, final project |
-| Carlos Antonio Graniel Manrique |   C0966684 | Movie database, recommendation logic, feature schema                  |
-| Lili Marcela Perez Clavijo      |   C0964898 | Chatbot conversation flow, NLP preference extraction                  |
-| Brayan Yesid Roncancio Suarez   |   C0966032 | Multilingual normalization, language detection                        |
-| David Aponte Monroy             |   C0967956 | Testing, evaluation, metrics, model comparison                        |
-| Motunrayo Aduloju               |   C0968107 | Dataset preparation, feature engineering, prototype support           |
+| Name                            | Main Contribution Area                                                |
+| ------------------------------- | --------------------------------------------------------------------- |
+| Alejandro Parparcen Grillet     | Architecture, backend integration, GitHub coordination, final project |
+| Carlos Antonio Graniel Manrique | Movie database, recommendation logic, feature schema                  |
+| Lili Marcela Perez Clavijo      | Chatbot conversation flow, NLP preference extraction                  |
+| Brayan Yesid Roncancio Suarez   | Multilingual normalization, language detection                        |
+| David Aponte Monroy             | Testing, evaluation, metrics, model comparison                        |
+| Motunrayo Aduloju               | Dataset preparation, feature engineering, prototype support           |
 
 ---
 
